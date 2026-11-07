@@ -456,6 +456,8 @@ export async function readQuote(input, credentials) {
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'vehicle-confirmed' }));
     stage = 'materials-tab';
     await page.getByText('Quick Click', { exact: true }).click();
+    console.info(JSON.stringify({component:'supplier-service-categories', names:await page.locator('p-checkbox')
+      .evaluateAll(nodes=>nodes.map(n=>n.innerText.trim()).filter(text=>text&&text.length<100).slice(0,80))}));
     stage = 'materials-filter-category';
     await clickCategory(page, 'Oelfilter');
     stage = 'materials-drain-category';
@@ -483,6 +485,9 @@ export async function readQuote(input, credentials) {
     await haynes.getByRole('link', { name: /Arbeitswerte/ }).click();
     await haynes.getByRole('heading', { name: 'Arbeitswerte', exact: true }).waitFor();
     const labourText = await visibleText(haynes);
+    console.info(JSON.stringify({component:'supplier-service-operations', names:labourText.split('\n')
+      .map(x=>x.trim()).filter(x=>x.length<140&&/Filter|Brems|Zündker|Riemen|Batterie|Getriebe/.test(x)
+        &&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,60)}));
     const labourHours = parseOilHours(labourText);
     const operation = labourText.match(/Motoröl und Filter wechseln\s*OE\s*:\s*([\w-]+)/)?.[1];
     if (!operation) throw manual('Arbeitsposition konnte nicht eindeutig gelesen werden.');
