@@ -21,12 +21,19 @@ test('brake candidates require VIN fitment, exact axle and correct axle quantity
  assert.equal(componentCandidate(text.replace('Einbauseite','Einbauposition').replace('Vorderachse','Hinterachse'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
 });
 test('only one explicitly identified OE-equivalent product line resolves an optional upgrade',()=>{
- const prime={brand:'BREMBO',productLine:'Prime',partNumber:'TEST-STANDARD',unitNetCents:20000};
- const upgrade={brand:'BREMBO',productLine:null,partNumber:'TEST-UPGRADE',unitNetCents:10000};
+ const prime={brand:'BREMBO',productLine:'Prime',partNumber:'TEST-STANDARD',unitNetCents:20000,fitmentProfile:'TEST-SAME-FITMENT'};
+ const upgrade={brand:'BREMBO',productLine:null,partNumber:'TEST-UPGRADE',unitNetCents:10000,fitmentProfile:'TEST-SAME-FITMENT'};
  assert.equal(uniqueOeVariant([prime,upgrade]),prime);
  assert.equal(uniqueOeVariant([prime,{...prime,partNumber:'TEST-OTHER-FITMENT'}]),null);
  assert.equal(uniqueOeVariant([upgrade]),null);
  assert.equal(uniqueOeVariant([prime,{...upgrade,brand:'ATE'}]),null);
+ assert.equal(uniqueOeVariant([prime,{...upgrade,fitmentProfile:'TEST-DIFFERENT-BRAKE'}]),null);
+ const c=vehicleServices['Bremsbeläge Vorderachse erneuern'].components[0];
+ const text='Artikel Nr.: TEST-SET\nBremsbelagsatz, Scheibenbremse\nVIN\nPRIME LINE\nKatalog-Marke: BREMBO\nbenötigte Stückzahl: 1\nBreite [mm]:\n184\nHöhe [mm]:\n75\nDicke/Stärke [mm]:\n21\nBremssystem:\nBrembo\nWVA-Nummer:\n22062\nUVPE: 120.00 CHF 80.00 CHF exkl. MwSt.';
+ const first=componentCandidate(text,c,retailPriceCents,{confirmed:true,axle:'front'});
+ assert.ok(first.fitmentProfile);assert.equal(first.productLine,'Prime');
+ const different=componentCandidate(text.replace('Höhe [mm]:\n75','Höhe [mm]:\n77').replace('PRIME LINE','GREENANCE'),c,retailPriceCents,{confirmed:true,axle:'front'});
+ assert.equal(uniqueOeVariant([first,different]),null);
 });
 test('manufacturer evidence is not confused with a brake system compatibility label',()=>{
  const text='Herstellereinschränkung: ATE\nKatalog-Marke: BREMBO';

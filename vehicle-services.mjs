@@ -55,11 +55,20 @@ export function componentCandidate(text,component,readPrice,scope={}){
   const brands=component.brands||(component.axle?brakeBrands:['MANN-FILTER','MAHLE','BOSCH']);
   const brand=catalogBrand(text,brands);if(!brand)return null;
   let price;try{price=readPrice(text)}catch{return null}
-  const productLine=brand==='BREMBO'&&(/(?:^|\n)\s*PRIME LINE\b/i.test(text)||/Brembo Prime/i.test(text))?'Prime':null;
-  return {kind:component.kind,partNumber:number,description:brand+(productLine?' '+productLine:'')+' '+component.name,quantity,unitNetCents:price,priceBasis:'retail-ex-vat',brand,productLine};
+  const productLine=brand==='BREMBO'&&/(?:^|\n)\s*PRIME LINE\b/i.test(text)?'Prime':null;
+  let fitmentProfile=null;
+  if(component.kind.endsWith('-pads')){
+    const value=pattern=>{const values=[...text.matchAll(new RegExp(pattern+'\\s*:\\s*(\\d+(?:[.,]\\d+)?)\\b','gi'))].map(x=>Number(x[1].replace(',','.')));return values.length&&new Set(values).size===1?values[0]:null};
+    const width=value('Breite \\[mm\\]'),height=value('Höhe \\[mm\\]'),thickness=value('Dicke/Stärke \\[mm\\]'),wva=value('WVA-Nummer');
+    const systems=[...text.matchAll(/Bremssystem\s*:\s*([^\n|]+)/gi)].map(x=>x[1].trim().toUpperCase());
+    if([width,height,thickness,wva].every(x=>Number.isFinite(x)&&x>0)&&systems.length&&new Set(systems).size===1)
+      fitmentProfile=JSON.stringify([component.axle,quantity,width,height,thickness,wva,systems[0]]);
+  }
+  return {kind:component.kind,partNumber:number,description:brand+(productLine?' '+productLine:'')+' '+component.name,quantity,unitNetCents:price,priceBasis:'retail-ex-vat',brand,productLine,fitmentProfile};
 }
 export function uniqueOeVariant(candidates){
   if(!candidates.length||candidates.some(x=>x.brand!=='BREMBO'))return null;
+  if(candidates.some(x=>!x.fitmentProfile)||new Set(candidates.map(x=>x.fitmentProfile)).size!==1)return null;
   const standard=candidates.filter(x=>x.productLine==='Prime');
   return standard.length===1?standard[0]:null;
 }

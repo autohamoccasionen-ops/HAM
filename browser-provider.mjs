@@ -535,7 +535,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
         }
       }
       if(!found)throw manual('Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.');
-      const {brand,productLine,...part}=found;selected.push(part);
+      const {brand,productLine,fitmentProfile,...part}=found;selected.push(part);
     }
     previousCategories=[category];
   }
