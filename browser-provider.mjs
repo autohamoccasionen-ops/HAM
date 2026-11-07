@@ -160,6 +160,11 @@ export function normalizeCatalogText(text, labels = []) {
   return result;
 }
 
+export function oilPackageConfirmed(text) {
+  const litres = Number(String(text).match(/Inhalt \[Liter\]:\s*(\d+(?:[.,]\d+)?)/)?.[1]?.replace(',', '.'));
+  return litres === 1 && /\b0W\s*-?\s*20\b/.test(text);
+}
+
 async function completeArticleContainer(card) {
   let article = card;
   for (let depth = 0; depth < 5; depth++) {
@@ -339,7 +344,9 @@ export async function readQuote(input, credentials) {
     reviewReason: { 'Teilekategorie nicht eindeutig.': 'CATEGORY_LABEL_AMBIGUOUS',
       'Teileauswahl muss geprüft werden.': 'CATEGORY_CONTROL_UNCONFIRMED',
       'Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.': 'MATERIALS_UNCONFIRMED',
-      'Artikelnummer nicht eindeutig gelesen.': 'PART_NUMBER_UNCONFIRMED' }[error?.message] || null,
+      'Artikelnummer nicht eindeutig gelesen.': 'PART_NUMBER_UNCONFIRMED',
+      'Motorölartikel nicht eindeutig.': 'OIL_PRODUCT_UNCONFIRMED',
+      'Ölgebinde muss geprüft werden.': 'OIL_PACKAGE_UNCONFIRMED' }[error?.message] || null,
     interaction: /locator\.click: Timeout/.test(error?.message || '') ? 'click'
       : /locator\.check: Timeout/.test(error?.message || '') ? 'check'
       : /locator\.waitFor: Timeout/.test(error?.message || '') ? 'wait' : 'other',
@@ -462,6 +469,7 @@ export async function readQuote(input, credentials) {
     const labourHours = parseOilHours(labourText);
     const operation = labourText.match(/Motoröl und Filter wechseln\s*OE\s*:\s*([\w-]+)/)?.[1];
     if (!operation) throw manual('Arbeitsposition konnte nicht eindeutig gelesen werden.');
+    console.info(JSON.stringify({ component: 'supplier-progress', stage: 'labour-confirmed' }));
     stage = 'oil-specification';
     await haynes.getByRole('link', { name: '<Zurück zu Übersicht', exact: true }).click();
     await haynes.getByRole('link', { name: 'Reparaturdaten', exact: true }).click();
@@ -475,14 +483,27 @@ export async function readQuote(input, credentials) {
     // Initial supported catalog mapping. Unmapped approvals are deliberately
     // manual review. Never substitute this oil for an unlisted specification.
     if (!/SAE 0W-20\s+MB 229\.71/.test(engine)) throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
-    stage = 'oil-product';
+    console.info(JSON.stringify({ component: 'supplier-progress', stage: 'oil-specification-confirmed' }));
+    stage = 'oil-product-search';
     await search(page, '15F6E6');
-    const oilCard = page.locator('[id^="part-detail-"]').filter({ hasText: 'Artikel Nr.: 15F6E6' });
-    if (await oilCard.count() !== 1) throw manual('Motorölartikel nicht eindeutig.');
-    await oilCard.getByRole('button', { name: 'Mehr Details', exact: true }).click();
+    stage = 'oil-product-identification';
+    const oilEntries = [];
+    for (const card of await page.locator('[id^="part-detail-"]').all()) {
+      if (!await card.isVisible()) continue;
+      const article = await completeArticleContainer(card);
+      const text = await readCatalogCard(article);
+      if (/Artikel Nr\.:\s*15F6E6(?:\s|$)/.test(text)) oilEntries.push(article);
+    }
+    if (oilEntries.length !== 1) throw manual('Motorölartikel nicht eindeutig.');
+    const oilCard = oilEntries[0];
+    stage = 'oil-product-details';
+    const moreDetails = oilCard.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
+    if (await moreDetails.count() === 1) await moreDetails.click();
+    stage = 'oil-approval-confirmation';
     await oilCard.getByText('Herstellerfreigabe: MB 229.71', { exact: true }).waitFor();
-    const oilText = await oilCard.innerText();
-    if (!/Inhalt \[Liter\]:\s*1\b/.test(oilText) || !/0W20/.test(oilText)) throw manual('Ölgebinde muss geprüft werden.');
+    const oilText = await readCatalogCard(oilCard);
+    stage = 'oil-package-confirmation';
+    if (!oilPackageConfirmed(oilText)) throw manual('Ölgebinde muss geprüft werden.');
     return { vin: input.vin, vehicle, source: 'D-Store / HaynesPro', labourHours, labourOperation: operation,
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
