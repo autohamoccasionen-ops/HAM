@@ -276,7 +276,7 @@ export function uniqueCheckboxChange(before, after) {
   return changed.length === 1 ? changed[0] : null;
 }
 
-async function selectCategoryByObservedChange(page, row, label) {
+async function selectCategoryByObservedChange(page, row, label, desired = true) {
   const snapshot = () => row.getByRole('checkbox').evaluateAll(nodes => nodes.map(node => ({
     id: node.id || null, checked: node.type === 'checkbox' ? node.checked
       : node.getAttribute('aria-checked') === 'true' ? true : node.getAttribute('aria-checked') === 'false' ? false : null
@@ -288,19 +288,19 @@ async function selectCategoryByObservedChange(page, row, label) {
     const after = await snapshot();
     const index = uniqueCheckboxChange(before, after);
     if (index !== null) {
-      if (after[index].checked) return true;
+      if (after[index].checked === desired) return true;
       // The category was already selected. Restore it through the same label.
       await label.click();
       const restored = await snapshot();
       return restored.length === before.length && restored.every((item, i) => item.id === before[i].id
-        && item.checked === (i === index ? true : before[i].checked));
+        && item.checked === (i === index ? desired : before[i].checked));
     }
     await page.waitForTimeout(100);
   }
   return false;
 }
 
-async function clickCategory(page, name, explicitLabel) {
+async function clickCategory(page, name, explicitLabel, desired = true) {
   const panel = page.getByRole('tabpanel', { name: 'Quick Click', exact: true });
   const scope = await panel.count() === 1 ? panel : page;
   // The same name also appears in the navigation tree. Its DIV is not the
@@ -324,26 +324,26 @@ async function clickCategory(page, name, explicitLabel) {
     else matches = row.getByRole('checkbox');
   }
   if (await matches.count() !== 1) {
-    if (await selectCategoryByObservedChange(page, row, label)) return;
+    if (await selectCategoryByObservedChange(page, row, label, desired)) return;
     throw manual('Teileauswahl muss geprüft werden.');
   }
   const checkbox = matches.first();
   const checked = () => checkbox.evaluate(categoryCheckboxState);
   const initial = await checked();
   if (initial === null) throw manual('Teileauswahl muss geprüft werden.');
-  if (initial) return;
+  if (initial === desired) return;
   // Styled tree checkboxes cover the native input with their visible label.
   // Use that normal user-facing target, then verify actual checked state.
   await label.click();
   for (let attempt = 0; attempt < 5; attempt++) {
-    if (await checked() === true) return;
+    if (await checked() === desired) return;
     await page.waitForTimeout(100);
   }
   const wrapper = checkbox.locator('..');
   if (await wrapper.isVisible() && await wrapper.getByRole('checkbox').count() === 1) {
     await wrapper.click();
     for (let attempt = 0; attempt < 5; attempt++) {
-      if (await checked() === true) return;
+      if (await checked() === desired) return;
       await page.waitForTimeout(100);
     }
   }
@@ -362,6 +362,15 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
     catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
     await page.getByText('Quick Click',{exact:true}).click();
+    // Do not accumulate products from earlier categories in the same portal
+    // session. Change normal checkbox controls and verify their actual state.
+    for(const control of await page.locator('p-checkbox').all()){
+      if(await control.evaluate(categoryCheckboxState)!==true)continue;
+      const name=(await control.innerText()).trim();
+      const label=control.getByText(name,{exact:true});
+      if(!name||name.length>100||await label.count()!==1)throw manual('Vorherige Teileauswahl konnte nicht eindeutig zurückgesetzt werden.');
+      await clickCategory(page,name,label,false);
+    }
     const definition=vehicleServices[names.find(name=>vehicleServices[name].category===category)];
     if(definition.categoryAxle){
       const labels=page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true});
