@@ -7,7 +7,29 @@ const clean = text => String(text).replace(/\u00a0/g, ' ').trim();
 const manual = message => new QuoteError('MANUAL_REVIEW_REQUIRED', message);
 const invalidLogin = /Falsches Passwort|incorrect username or password|Benutzername.*ungültig|Sitzung ist abgelaufen|(?:Benutzername|Passwort|Zugangsdaten|Anmeldedaten)[^\n]{0,100}(?:falsch|ungültig|nicht korrekt)|(?:falsch|ungültig)[^\n]{0,60}(?:Benutzername|Passwort|Zugangsdaten|Anmeldedaten)/i;
 
+// Runs in the supplier page. Only the CMP's documented public API is used:
+// https://usercentrics.com/docs/web/features/api/control-functionality/
+// No storage edits, overlay removal, request blocking or security bypasses.
+export async function saveEssentialConsentInPage() {
+  const cmp = window.__ucCmp;
+  if (!cmp || typeof cmp.isInitialized !== 'function' || !await cmp.isInitialized()) return 'not-ready';
+  if (typeof cmp.isAgeVerificationRequired === 'function' && await cmp.isAgeVerificationRequired()) return 'manual-required';
+  if (typeof cmp.isConsentRequired === 'function' && !await cmp.isConsentRequired()) return 'not-required';
+  if (typeof cmp.denyAllConsents !== 'function' || typeof cmp.saveConsents !== 'function'
+    || typeof cmp.closeCmp !== 'function') return 'unsupported';
+  await cmp.denyAllConsents();
+  await cmp.saveConsents('IMPLICIT');
+  await cmp.closeCmp();
+  return 'essential-only-saved';
+}
+
 async function rejectVisibleCookieConsent(page) {
+  const consent = await page.evaluate(saveEssentialConsentInPage);
+  if (consent === 'manual-required') throw new QuoteError('SOURCE_UNAVAILABLE', 'Der Datenanbieter erfordert eine manuelle Prüfung.', 503);
+  if (consent === 'essential-only-saved') {
+    console.info(JSON.stringify({ component: 'supplier-consent', outcome: 'essential-only-api-saved' }));
+    return true;
+  }
   const rejectName = /^(?:(?:alle|alles|cookies)\s+)?ablehnen$|^nur (?:notwendige|erforderliche|essenzielle|essentielle)(?: cookies)?(?: (?:akzeptieren|zulassen|verwenden))?$|^reject(?: all)?$/i;
   for (const frame of page.frames()) {
     const privacy = frame.locator('#uc-main-dialog');
