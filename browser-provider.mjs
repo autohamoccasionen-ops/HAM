@@ -1,5 +1,6 @@
 import { QuoteError, parseOilCapacity, parseOilHours, retailPriceCents } from './quote.mjs';
 import { vehicleServices,serviceComponents,componentCandidate,operationEvidence,catalogBrand,brakeBrands } from './vehicle-services.mjs';
+import {engineOilSpecification,approvedOilProduct,oilBrands} from './oil-specs.mjs';
 
 // Read-only browser integration. No account changes, cart additions, orders,
 // offer submission, CAPTCHA solving, trace capture or cookie export.
@@ -153,7 +154,7 @@ function articleNumber(text) {
 
 export function normalizeCatalogText(text, labels = []) {
   let result = String(text).replace(/\bOelfilter\b/gi, 'Ölfilter');
-  const names = [...new Set(['MAHLE', 'MANN-FILTER', 'BOSCH', 'ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS',...brakeBrands,'VARTA','EXIDE','NGK','DENSO','CONTITECH','GATES','DAYCO','INA','VALEO','SWF'])];
+  const names = [...new Set(['MAHLE', 'MANN-FILTER', 'BOSCH', 'ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS',...brakeBrands,...oilBrands,'VARTA','EXIDE','NGK','DENSO','CONTITECH','GATES','DAYCO','INA','VALEO','SWF'])];
   const normalized = labels.map(label => String(label || '').trim().toUpperCase());
   const brands = names.filter(name => normalized.some(label => [name, `${name} LOGO`, `LOGO ${name}`].includes(label)));
   if (brands.length === 1 && !result.includes(brands[0])) result += '\n' + brands[0];
@@ -394,18 +395,30 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       }
     }else await clickCategory(page,category);
     await page.getByRole('button',{name:'Artikel anzeigen',exact:true}).click();
+    console.info(JSON.stringify({component:'supplier-extra-progress',step:'articles-opened',category}));
     await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor();
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
     for(const card of await page.locator('[id^="part-detail-"]').all()){
       if(!await card.isVisible())continue;
-      const article=await completeArticleContainer(card);
+      const id=await card.getAttribute('id');
+      if(!id)throw manual('Artikelzuordnung muss geprüft werden.');
+      const escaped=id.replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+      const stable=page.locator('[id="'+escaped+'"]').filter({visible:true});
+      if(await stable.count()!==1)throw manual('Artikelzuordnung muss geprüft werden.');
+      const article=await completeArticleContainer(stable);
+      await article.filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF[\s\S]*exkl\.\s*MwSt\./}).waitFor();
       let text=await readCatalogCard(article);
       if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
       if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope))){
         const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
-        if(await details.count()===1){await details.click();await article.getByText(components.some(c=>c.axle)?/Einbauseite/:/benötigte Stückzahl/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article)}
+        console.info(JSON.stringify({component:'supplier-extra-progress',step:'product-details',category,detailsCount:await details.count(),quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,brand:catalogBrand(text,brakeBrands),packaged:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text)}));
+        if(await details.count()===1){
+          try{await details.click({timeout:10000})}
+          catch(error){text=await readCatalogCard(article);if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))throw error}
+          for(let attempt=0;attempt<10;attempt++){text=await readCatalogCard(article);if(components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))break;await page.waitForTimeout(200)}
+        }
       }
       entries.push(text);
     }
@@ -432,6 +445,29 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
   await page.goBack({waitUntil:'domcontentloaded'});
   if(page.url()!==vehicleUrl)await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
   return {selected,page};
+}
+
+async function chooseApprovedEngineOil(page,spec){
+  await search(page,spec.query);
+  const candidates=[];
+  for(const card of await page.locator('[id^="part-detail-"]').all()){
+    if(!await card.isVisible())continue;
+    const article=await completeArticleContainer(card);
+    let text=await readCatalogCard(article);
+    if(!/Motor(?:en)?öl/i.test(text))continue;
+    if(!approvedOilProduct(text,spec)){
+      const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
+      if(await details.count()===1){await details.click();await article.getByText(/Herstellerfreigabe/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article);}
+    }
+    if(!approvedOilProduct(text,spec))continue;
+    let price;try{price=retailPriceCents(text)}catch{continue}
+    const brand=catalogBrand(text,oilBrands);
+    candidates.push({kind:'oil',partNumber:articleNumber(text),description:(brand?brand+' ':'')+'Motoröl SAE '+spec.viscosity+', '+spec.approval,
+      unitNetCents:price,priceBasis:'retail-ex-vat',rank:brand?oilBrands.indexOf(brand):oilBrands.length});
+  }
+  candidates.sort((a,b)=>a.rank-b.rank||a.unitNetCents-b.unitNetCents||a.partNumber.localeCompare(b.partNumber));
+  if(!candidates.length)throw manual('Kein Motoröl mit bestätigter Herstellerfreigabe, Viskosität und Gebindegrösse gefunden.');
+  const {rank,...oil}=candidates[0];return oil;
 }
 
 export async function readQuote(input, credentials) {
@@ -616,10 +652,15 @@ export async function readQuote(input, credentials) {
     const lubricants = await visibleText(haynes);
     const engine = lubricants.split(/\nMotor\n/).slice(1).join('\nMotor\n').split(/\nKühlsystem\n/)[0];
     const litres = parseOilCapacity(engine);
-    // Initial supported catalog mapping. Unmapped approvals are deliberately
-    // manual review. Never substitute this oil for an unlisted specification.
-    if (!/SAE 0W-20\s+MB 229\.71/.test(engine)) throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
+    const oilSpecification=engineOilSpecification(engine);
+    if(!oilSpecification)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'oil-specification-confirmed' }));
+    if(oilSpecification.viscosity!=='0W20'||!/^MB\s+229\.71$/i.test(oilSpecification.approval)){
+      stage='oil-approved-product-search';
+      const oil=await chooseApprovedEngineOil(page,oilSpecification);
+      return {vin:input.vin,vehicle,source:'D-Store / HaynesPro',labourHours,labourOperation:operation,extraLabour,
+        materials:[{...oil,quantity:litres},...parts]};
+    }
     stage = 'oil-product-search';
     await search(page, '15F6E6');
     stage = 'oil-product-identification';

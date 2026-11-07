@@ -9,7 +9,7 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Thirty-four automated tests cover calculations, HTTP behavior and consent
+Thirty-six automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
 
@@ -58,8 +58,10 @@ proxy; do not call this API with the secret directly from browser code.
   are rejected. Request and quotation selections must match.
 - Initial oil mapping: Castrol 0W-20 C5 SKU 15F6E6, only when HaynesPro explicitly
   lists MB 229.71 / SAE 0W-20 for the resolved vehicle and the current product
-  page confirms that approval and the 1-litre package. Other approvals require
-  additional verified mappings; never apply this oil universally.
+  page confirms that approval and the 1-litre package. Other explicit manufacturer
+  approvals use a guarded catalogue search requiring the same approval, viscosity,
+  one-litre packaging and current retail price. This fallback still requires
+  end-to-end verification on additional vehicle specifications; no oil is universal.
 - Filter and drain-plug selections require a VIN badge and a listed seal.
   Packaging multiples and unpriced items are rejected.
 - Each lookup starts a new, in-memory browser context. No session files,
