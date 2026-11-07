@@ -10,19 +10,14 @@ remain disabled until the hosted vendor login and complete lookup are tested**.
 A healthy `/healthz` response confirms the HTTP process, not a working vendor
 connection. No real vehicle data or credentials belong in this repository.
 
-### Hosted verification — 7 November 2026
+### Verification status
 
-The Render HTTP process and bearer protection were verified. Required supplier
-credential variables are present. Controlled hosted lookup attempts reached the
-supplier login form, but did not reach the vehicle search after submitting it.
-The form remained visible after the extended wait; no recognized invalid-login
-or access-challenge message was detected. This does not prove that the password
-is wrong or that the vendor blocks hosting. Automatic quotation mode remains
-disabled pending a successful login and full vehicle/material/labour lookup.
-The customer website has not been connected to this unverified lookup.
-
-Safe diagnostics record only the lookup stage and fixed outcome categories.
-Never add raw page contents, browser errors or credential values to logs.
+Automatic quotations are not production-ready and must remain disabled until
+a complete hosted supplier lookup has been verified. The customer website has
+not been connected to the unverified lookup. Seventeen automated tests pass;
+they cover calculations, HTTP behavior and consent safeguards, not supplier
+end-to-end availability. Credentials and internal operational diagnostics must
+not be published in this public repository.
 
 ## Runtime configuration
 
