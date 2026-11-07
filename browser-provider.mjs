@@ -22,7 +22,7 @@ async function rejectVisibleCookieConsent(page) {
       }
       await save.click();
       console.info(JSON.stringify({ component: 'supplier-consent', outcome: 'essential-only-saved' }));
-      return;
+      return true;
     }
     const buttons = frame.getByRole('button', { name: rejectName });
     for (const button of await buttons.all()) {
@@ -33,9 +33,10 @@ async function rejectVisibleCookieConsent(page) {
         throw new QuoteError('SOURCE_UNAVAILABLE', 'Der Datenanbieter erfordert eine manuelle Prüfung.', 503);
       }
       await button.click();
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 function interceptedElementCategory(error) {
@@ -157,7 +158,16 @@ export async function readQuote(input, credentials) {
       invalidInputCount: await page.locator('input:invalid').count(),
       loginButtonEnabled: await loginButton.isEnabled() }));
     stage = 'login-submit';
-    await loginButton.click();
+    try {
+      await loginButton.click();
+    } catch (error) {
+      // A late Usercentrics layer can appear after the readiness check.
+      // Retry once only after its normal visible consent controls were used.
+      if (!/intercepts pointer events/.test(error?.message || '')
+        || !interceptedElementCategory(error).includes('usercentrics')
+        || !await rejectVisibleCookieConsent(page)) throw error;
+      await loginButton.click();
+    }
     await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).waitFor({ timeout: 45000 });
     await checkLogin(page);
     stage = 'vehicle-lookup';
