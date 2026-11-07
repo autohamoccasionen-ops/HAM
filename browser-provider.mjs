@@ -71,7 +71,7 @@ async function rejectVisibleCookieConsent(page, waitForUI = false) {
 }
 
 async function clickVisibleCookieConsent(page) {
-  const rejectName = /^(?:(?:alle|alles|cookies)\s+)?ablehnen$|^nur (?:notwendige|erforderliche|essenzielle|essentielle)(?: cookies)?(?: (?:akzeptieren|zulassen|verwenden))?$|^reject(?: all)?$/i;
+  const rejectName = /^(?:(?:alle|alles|cookies)\s+)?ablehnen$|^nur (?:notwendige|erforderliche|essenzielle|essentielle)(?: cookies)?(?: (?:akzeptieren|zulassen|verwenden))?$|^(?:reject|deny)(?: all)?$/i;
   for (const frame of page.frames()) {
     const privacy = frame.locator('#uc-main-dialog');
     const save = privacy.getByRole('button', { name: /^(Einstellungen speichern|Auswahl speichern|Save settings|Save preferences)$/i });
