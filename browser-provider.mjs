@@ -365,12 +365,12 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     await page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true}).first().waitFor();
     // Do not accumulate products from earlier categories in the same portal
     // session. Change normal checkbox controls and verify their actual state.
-    for(const control of await page.locator('p-checkbox').all()){
+    for(const control of await page.locator('p-checkbox').filter({visible:true}).all()){
       if(await control.evaluate(categoryCheckboxState)!==true)continue;
-      const name=(await control.innerText()).trim();
-      const label=control.getByText(name,{exact:true});
-      if(!name||name.length>100||await label.count()!==1)throw manual('Vorherige Teileauswahl konnte nicht eindeutig zurückgesetzt werden.');
-      await clickCategory(page,name,label,false);
+      if(await control.locator('input[type="checkbox"]').count()!==1)throw manual('Vorherige Teileauswahl konnte nicht eindeutig zurückgesetzt werden.');
+      await control.click();
+      for(let attempt=0;attempt<5&&await control.evaluate(categoryCheckboxState)!==false;attempt++)await page.waitForTimeout(100);
+      if(await control.evaluate(categoryCheckboxState)!==false)throw manual('Vorherige Teileauswahl konnte nicht eindeutig zurückgesetzt werden.');
     }
     const definition=vehicleServices[names.find(name=>vehicleServices[name].category===category)];
     if(definition.categoryAxle){
