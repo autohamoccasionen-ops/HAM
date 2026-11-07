@@ -79,21 +79,27 @@ async function clickCategory(page, name) {
 
 export async function readQuote(input, credentials) {
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  let stage = 'browser-launch';
+  const reportFailure = error => console.warn(JSON.stringify({ component: 'supplier-lookup', stage,
+    failure: error instanceof QuoteError ? error.code : error?.name === 'TimeoutError' ? 'TIMEOUT' : 'BROWSER_ERROR' }));
+  const browser = await chromium.launch({ headless: true }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(20000);
   context.setDefaultNavigationTimeout(30000);
   const deadline = setTimeout(() => context.close().catch(() => {}), 120000);
   try {
+    stage = 'login-page';
     await page.goto(`${DSTORE}/dch-ax/login`, { waitUntil: 'domcontentloaded' });
     const rejectCookies = page.getByRole('button', { name: 'Ablehnen', exact: true });
     if (await rejectCookies.isVisible()) await rejectCookies.click();
     await page.locator('input[name="userName"]').fill(credentials.username);
     await page.locator('input[type="password"]').fill(credentials.password);
+    stage = 'login-submit';
     await page.getByRole('button', { name: 'Einloggen', exact: true }).click();
     await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).waitFor();
     await checkLogin(page);
+    stage = 'vehicle-lookup';
     const vin = page.getByPlaceholder('VIN bzw. Chassis-Nummer', { exact: true });
     await vin.fill(input.vin);
     await vin.press('Enter');
@@ -103,6 +109,7 @@ export async function readQuote(input, credentials) {
     const vehicle = clean(await page.getByRole('heading', { level: 3 }).first().locator('..').innerText());
     const vehicleId = new URL(page.url()).pathname.match(/\/vehicle\/V(\d+)M\d+\//)?.[1];
     if (!vehicleId || !vehicle.includes(input.vin)) throw manual('Fahrzeugzuordnung nicht bestätigt.');
+    stage = 'material-selection';
     await page.getByRole('tab', { name: 'Quick Click', exact: true }).click();
     await clickCategory(page, 'Oelfilter');
     await clickCategory(page, 'Ablassschraube Ölwanne');
@@ -112,18 +119,21 @@ export async function readQuote(input, credentials) {
     // retail price rather than copying an incomplete loading state.
     await page.getByText('UVPE:', { exact: true }).first().waitFor();
     const parts = await chooseMaterials(page);
+    stage = 'haynes-open';
     await page.getByRole('link', { name: 'Haynes Pro', exact: true }).click();
     const popup = context.waitForEvent('page');
     await page.getByRole('button', { name: 'Hier geht es zu HaynesPro', exact: true }).click();
     const haynes = await popup;
     haynes.setDefaultTimeout(20000);
     await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
+    stage = 'labour-lookup';
     await haynes.getByRole('link', { name: /Arbeitswerte/ }).click();
     await haynes.getByRole('heading', { name: 'Arbeitswerte', exact: true }).waitFor();
     const labourText = await visibleText(haynes);
     const labourHours = parseOilHours(labourText);
     const operation = labourText.match(/Motoröl und Filter wechseln\s*OE\s*:\s*([\w-]+)/)?.[1];
     if (!operation) throw manual('Arbeitsposition konnte nicht eindeutig gelesen werden.');
+    stage = 'oil-specification';
     await haynes.getByRole('link', { name: '<Zurück zu Übersicht', exact: true }).click();
     await haynes.getByRole('link', { name: 'Reparaturdaten', exact: true }).click();
     await haynes.getByRole('link', { name: 'D Schmiermittel und Betriebsflüssigkeiten >', exact: true }).click();
@@ -136,6 +146,7 @@ export async function readQuote(input, credentials) {
     // Initial supported catalog mapping. Unmapped approvals are deliberately
     // manual review. Never substitute this oil for an unlisted specification.
     if (!/SAE 0W-20\s+MB 229\.71/.test(engine)) throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
+    stage = 'oil-product';
     await search(page, '15F6E6');
     const oilCard = page.locator('[id^="part-detail-"]').filter({ hasText: 'Artikel Nr.: 15F6E6' });
     if (await oilCard.count() !== 1) throw manual('Motorölartikel nicht eindeutig.');
@@ -146,6 +157,9 @@ export async function readQuote(input, credentials) {
     return { vin: input.vin, vehicle, source: 'D-Store / HaynesPro', labourHours, labourOperation: operation,
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
+  } catch (error) {
+    reportFailure(error);
+    throw error;
   } finally {
     clearTimeout(deadline);
     await context.close().catch(() => {});
