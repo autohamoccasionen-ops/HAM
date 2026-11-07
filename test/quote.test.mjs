@@ -60,3 +60,21 @@ test('validate customer inputs and require separate review of unsupported servic
   assert.throws(() => validateRequest({ ...request, extras: ['Bremsen'] }), { code: 'MANUAL_REVIEW_REQUIRED' });
   assert.throws(() => validateRequest({ ...request, service: 'getriebeoel-service' }), { code: 'MANUAL_REVIEW_REQUIRED' });
 });
+
+test('selected packages are itemized once and VAT is calculated on the complete quotation',()=>{
+ const input=validateRequest({...request,extras:['Kraftstoffadditiv Diesel','Bremsflüssigkeit wechseln']});
+ const result=calculateQuote(input,verified);
+ assert.equal(result.baseSubtotalNetCents,53576);
+ assert.equal(result.subtotalNetCents,67376);
+ assert.equal(result.totalCents,72835);
+ assert.equal(result.labour.netCents,12000);
+ assert.deepEqual(result.addOns.map(x=>x.netCents),[11000,2800]);
+});
+
+test('conflicts and unsupported parts never receive a made-up package price',()=>{
+ for(const extras of [['Reifenwechsel','Räderwechsel'],['Aussenreinigung ohne Politur','Aussenreinigung mit Politur'],['Bremsflüssigkeit wechseln','Bremsflüssigkeit wechseln'],['Reifendrucksensoren erneuern'],['Räder reinigen']])
+  assert.throws(()=>validateRequest({...request,extras}),{code:'INVALID_REQUEST'});
+ assert.throws(()=>validateRequest({...request,extras:['Bremsbeläge Vorderachse erneuern']}),{code:'MANUAL_REVIEW_REQUIRED'});
+ const result=calculateQuote(validateRequest({...request,extras:['Reifenwechsel','Reifendrucksensoren erneuern']}),verified);
+ assert.equal(result.addOns.find(x=>x.name==='Reifendrucksensoren erneuern').netCents,28000);
+});

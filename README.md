@@ -9,7 +9,7 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Twenty-six automated tests cover calculations, HTTP behavior and consent
+Twenty-eight automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
 
@@ -32,7 +32,7 @@ proxy; do not call this API with the secret directly from browser code.
 - `GET /healthz`: public HTTP health, no vendor request or configuration values.
 - `GET /api/status`: bearer-protected configuration and enablement status.
 - `POST /api/quotes`: synchronous bearer-protected JSON: `vin` (17 characters), `mileage`
-  (integer), `service` (`oel-service`) and `extras` (empty array for now).
+  (integer), `service` (`oel-service`) and `extras` (selected package names or an empty array).
 - `POST /api/quote-jobs`: same input; immediately returns a pending job identifier.
 - `GET /api/quote-jobs/{jobId}`: bearer-protected polling; returns 202 while
   pending, then the complete quotation or manual review. Jobs are in memory,
@@ -46,8 +46,13 @@ proxy; do not call this API with the secret directly from browser code.
 
 - Supplier page changes, login challenges and ambiguous data cause manual review;
   a past successful lookup does not guarantee future availability.
-- Only Motoröl-Service without extras is implemented. Other selections require
-  manual review. This is not an all-services / all-VIN production release.
+- Motoröl-Service supports the existing garage package prices for selected
+  additional services. Vehicle-specific replacement parts and unlisted options
+  still require manual review. This is not an all-services / all-VIN release.
+- Package amounts include their labour. They are itemized once, with VAT and
+  cash rounding applied only after the complete net subtotal is calculated.
+- Conflicting selections and dependent options without their required service
+  are rejected. Request and quotation selections must match.
 - Initial oil mapping: Castrol 0W-20 C5 SKU 15F6E6, only when HaynesPro explicitly
   lists MB 229.71 / SAE 0W-20 for the resolved vehicle and the current product
   page confirms that approval and the 1-litre package. Other approvals require
