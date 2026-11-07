@@ -179,20 +179,24 @@ export function oilPackageConfirmed(text) {
 }
 
 async function completeArticleContainer(card) {
-  let article = card;
-  for (let depth = 0; depth < 5; depth++) {
-    const parent = article.locator('..');
-    if (await parent.locator('[id^="part-detail-"]').count() !== 1) break;
-    article = parent;
-  }
+  const depth=await card.evaluate(node=>{
+    let depth=0;
+    while(depth<5&&node.parentElement&&node.parentElement.querySelectorAll('[id^="part-detail-"]').length===1){node=node.parentElement;depth++;}
+    return depth;
+  });
+  let article=card;
+  for(let i=0;i<depth;i++)article=article.locator('..');
   return article;
 }
 
 async function readCatalogCard(card) {
-  const text = await card.innerText();
-  const labels = await card.locator('img[alt], [aria-label], [title]').evaluateAll(nodes => nodes.flatMap(node =>
-    ['alt', 'aria-label', 'title'].map(attribute => node.getAttribute(attribute)).filter(Boolean)));
-  return normalizeCatalogText(text, labels);
+  const data=await card.evaluate(node=>{
+    const labels=nodes=>Array.from(nodes).flatMap(n=>['alt','aria-label','title'].map(a=>n.getAttribute(a)).filter(Boolean));
+    return {text:node.innerText||'',labels:labels(node.querySelectorAll('img[alt], [aria-label], [title]')),
+      imageLabels:labels(node.querySelectorAll('img[alt],img[aria-label],img[title],[role="img"][aria-label]'))};
+  });
+  const imageText=normalizeCatalogText(data.text,[...data.imageLabels,...data.labels.filter(x=>x.trim().toUpperCase()==='VIN')]);
+  return /^Katalog-Marke:/m.test(imageText)?imageText:normalizeCatalogText(data.text,data.labels);
 }
 
 async function catalogueCards(page){
@@ -249,6 +253,7 @@ async function chooseMaterials(page) {
     brandSearch: for (const brand of priorities) {
       for (const entry of entries) {
         if (catalogBrand(entry.text,priorities)!==brand || !(kind === 'filter' ? /Ölfilter/.test(entry.text) : /Verschlussschraube, Ölwanne/.test(entry.text))) continue;
+        if(/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(entry.text))continue;
         await waitForRetailPrice(entry.card);
         entry.text=await readCatalogCard(entry.card);
         let candidate = materialCandidate(entry.text, kind);
@@ -428,12 +433,13 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     for(const card of cards){
       if(!await card.isVisible())continue;
       const article=await completeArticleContainer(card);
-      await waitForRetailPrice(article);
       let text=await readCatalogCard(article);
       if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
       // The initial result card carries the supplier's VIN fitment badge.
       // Unconfirmed universal alternatives must not become vehicle quotations.
       if(!/\bVIN\b/.test(text))continue;
+      if(/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text))continue;
+      await waitForRetailPrice(article);text=await readCatalogCard(article);
       if(definition.categoryAxle&&!catalogBrand(text,brakeBrands)){
         const labels=await article.locator('img[alt]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('alt')||'')
           .map(x=>x.trim()).filter(x=>x&&x.length<=80&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,12));
@@ -517,6 +523,7 @@ export async function readQuote(input, credentials) {
       'Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.':'EXTRA_PART_EVIDENCE_MISSING',
       'Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.':'EXTRA_LABOUR_UNCONFIRMED',
       'Ölgebinde muss geprüft werden.': 'OIL_PACKAGE_UNCONFIRMED' }[error?.message] || null,
+    browserOperation:String(error?.message||'').match(/(?:locator|page|frame)\.(\w+):/)?.[1]||null,
     interaction: /locator\.click: Timeout/.test(error?.message || '') ? 'click'
       : /locator\.check: Timeout/.test(error?.message || '') ? 'check'
       : /locator\.waitFor: Timeout/.test(error?.message || '') ? 'wait' : 'other',
