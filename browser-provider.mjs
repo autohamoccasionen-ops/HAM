@@ -192,6 +192,41 @@ export function categoryCheckboxState(element) {
   return null;
 }
 
+export function uniqueCheckboxChange(before, after) {
+  if (!before.length || before.length !== after.length || new Set(before.map(row => row.id)).size !== before.length) return null;
+  const changed = [];
+  for (let i = 0; i < before.length; i++) {
+    if (!before[i].id || before[i].id !== after[i].id || typeof before[i].checked !== 'boolean'
+      || typeof after[i].checked !== 'boolean') return null;
+    if (before[i].checked !== after[i].checked) changed.push(i);
+  }
+  return changed.length === 1 ? changed[0] : null;
+}
+
+async function selectCategoryByObservedChange(page, row, label) {
+  const snapshot = () => row.getByRole('checkbox').evaluateAll(nodes => nodes.map(node => ({
+    id: node.id || null, checked: node.type === 'checkbox' ? node.checked
+      : node.getAttribute('aria-checked') === 'true' ? true : node.getAttribute('aria-checked') === 'false' ? false : null
+  })));
+  const before = await snapshot();
+  if (before.some(item => !item.id || typeof item.checked !== 'boolean')) return false;
+  await label.click();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const after = await snapshot();
+    const index = uniqueCheckboxChange(before, after);
+    if (index !== null) {
+      if (after[index].checked) return true;
+      // The category was already selected. Restore it through the same label.
+      await label.click();
+      const restored = await snapshot();
+      return restored.length === before.length && restored.every((item, i) => item.id === before[i].id
+        && item.checked === (i === index ? true : before[i].checked));
+    }
+    await page.waitForTimeout(100);
+  }
+  return false;
+}
+
 async function clickCategory(page, name) {
   const label = page.getByText(name, { exact: true });
   if (await label.count() !== 1) throw manual('Teilekategorie nicht eindeutig.');
@@ -210,7 +245,10 @@ async function clickCategory(page, name) {
     if (associated.length === 1) matches = associated[0];
     else matches = row.getByRole('checkbox');
   }
-  if (await matches.count() !== 1) throw manual('Teileauswahl muss geprüft werden.');
+  if (await matches.count() !== 1) {
+    if (await selectCategoryByObservedChange(page, row, label)) return;
+    throw manual('Teileauswahl muss geprüft werden.');
+  }
   const checkbox = matches.first();
   const checked = () => checkbox.evaluate(categoryCheckboxState);
   const initial = await checked();
@@ -395,6 +433,14 @@ export async function readQuote(input, credentials) {
           hasNativeInput: !!node.querySelector('input[type="checkbox"]'), parentTag: node.parentElement?.tagName,
           parentClass: String(node.parentElement?.className || '').slice(0, 120) }))).catch(() => []);
       console.warn(JSON.stringify({ component: 'supplier-category-controls', stage, controls }));
+      const labelShape = await page.getByText(categoryName, { exact: true }).evaluate(node => ({
+        tag: node.tagName, hasFor: !!node.getAttribute('for'), parentTag: node.parentElement?.tagName,
+        parentClass: String(node.parentElement?.className || '').slice(0, 120),
+        children: Array.from(node.parentElement?.children || []).map(child => ({ tag: child.tagName,
+          className: String(child.className || '').slice(0, 100), containsLabel: child.contains(node),
+          checkboxCount: child.querySelectorAll('input[type="checkbox"]').length }))
+      })).catch(() => null);
+      console.warn(JSON.stringify({ component: 'supplier-category-label', stage, labelShape }));
     }
     if (stage === 'consent') console.warn(JSON.stringify({ component: 'supplier-consent-controls',
       publicButtonLabels: await publicConsentControls(page, credentials).catch(() => []) }));
