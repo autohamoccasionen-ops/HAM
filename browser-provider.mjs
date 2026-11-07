@@ -214,7 +214,8 @@ async function catalogueSnapshot(page){
     const cards=Array.from(document.querySelectorAll('[id^="part-detail-"]'));
     if(cards.length>80)return [{overflow:true}];
     return cards.flatMap(card=>{
-    if(!card.getClientRects().length)return [];
+    const rect=card.getBoundingClientRect(),style=getComputedStyle(card);
+    if(!rect.width||!rect.height||style.visibility==='hidden'||style.visibility==='collapse'||style.display==='none')return [];
     let root=card,depth=0;
     while(depth<5&&root.parentElement&&root.parentElement.querySelectorAll('[id^="part-detail-"]').length===1){root=root.parentElement;depth++;}
     const text=root.innerText||'';
@@ -459,7 +460,10 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
-    const cards=await catalogueSnapshot(page);
+    let cards=await catalogueSnapshot(page);
+    for(let attempt=0;attempt<60&&!cards.some(row=>components.some(c=>new RegExp(c.product,'i').test(row.text)));attempt++){
+      await page.waitForTimeout(500);cards=await catalogueSnapshot(page);
+    }
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
     console.info(JSON.stringify({component:'supplier-extra-snapshot-criteria',category,cards:cards.slice(0,30).map(row=>({
       vin:/\bVIN\b/.test(row.text),product:components.some(c=>new RegExp(c.product,'i').test(row.text)),
