@@ -5,10 +5,11 @@ import { QuoteError, parseOilCapacity, parseOilHours, retailPriceCents } from '.
 const DSTORE = 'https://d-store.ch';
 const clean = text => String(text).replace(/\u00a0/g, ' ').trim();
 const manual = message => new QuoteError('MANUAL_REVIEW_REQUIRED', message);
+const invalidLogin = /Falsches Passwort|incorrect username or password|Benutzername.*ungültig|Sitzung ist abgelaufen|(?:Benutzername|Passwort|Zugangsdaten|Anmeldedaten)[^\n]{0,100}(?:falsch|ungültig|nicht korrekt)|(?:falsch|ungültig)[^\n]{0,60}(?:Benutzername|Passwort|Zugangsdaten|Anmeldedaten)/i;
 
 async function checkLogin(page) {
   const text = await page.locator('body').innerText();
-  if (/Falsches Passwort|incorrect username or password|Benutzername.*ungültig|Sitzung ist abgelaufen/i.test(text)) {
+  if (invalidLogin.test(text)) {
     throw new QuoteError('AUTHENTICATION_REQUIRED', 'Der Datenzugang muss erneuert werden.', 503);
   }
   if (/verify you are human|checking your browser|automated traffic|access denied|captcha/i.test(text)) {
@@ -97,7 +98,7 @@ export async function readQuote(input, credentials) {
     await page.locator('input[type="password"]').fill(credentials.password);
     stage = 'login-submit';
     await page.getByRole('button', { name: 'Einloggen', exact: true }).click();
-    await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).waitFor({ timeout: 45000 });
     await checkLogin(page);
     stage = 'vehicle-lookup';
     const vin = page.getByPlaceholder('VIN bzw. Chassis-Nummer', { exact: true });
@@ -158,6 +159,18 @@ export async function readQuote(input, credentials) {
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {
+    if (stage === 'login-submit') {
+      // Read only visible text and record fixed booleans, never login values,
+      // page contents, URLs, cookies, screenshots or raw browser errors.
+      try {
+        await checkLogin(page);
+        console.warn(JSON.stringify({ component: 'supplier-login',
+          loginFormVisible: await page.locator('input[type="password"]').isVisible(),
+          searchVisible: await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).isVisible() }));
+      } catch (loginError) {
+        if (loginError instanceof QuoteError) { reportFailure(loginError); throw loginError; }
+      }
+    }
     reportFailure(error);
     throw error;
   } finally {
