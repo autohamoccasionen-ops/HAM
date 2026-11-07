@@ -400,7 +400,9 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
-    for(const card of await page.locator('[id^="part-detail-"]').all()){
+    const cards=await page.locator('[id^="part-detail-"]').all();
+    console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
+    for(const card of cards){
       if(!await card.isVisible())continue;
       const id=await card.getAttribute('id');
       if(!id)throw manual('Artikelzuordnung muss geprüft werden.');
@@ -411,6 +413,9 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       await article.filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF[\s\S]*exkl\.\s*MwSt\./}).waitFor();
       let text=await readCatalogCard(article);
       if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
+      // The initial result card carries the supplier's VIN fitment badge.
+      // Unconfirmed universal alternatives must not become vehicle quotations.
+      if(!/\bVIN\b/.test(text))continue;
       if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope))){
         const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
         console.info(JSON.stringify({component:'supplier-extra-progress',step:'product-details',category,detailsCount:await details.count(),quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,brand:catalogBrand(text,brakeBrands),packaged:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text)}));
@@ -497,6 +502,14 @@ export async function readQuote(input, credentials) {
     consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
   const browser = await chromium.launch({ headless: true, timeout: 30000 }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
+  // Keep the free service's memory available for catalogue and labour data.
+  // Product names, prices, fitment badges and image alt labels remain in the
+  // document; only decorative binary payloads are omitted. Scripts, styles,
+  // account requests and verification controls keep their normal behavior.
+  await context.route('**/*',route=>{
+    const kind=route.request().resourceType();
+    return ['image','media','font'].includes(kind)?route.abort():route.continue();
+  });
   let page = await context.newPage();
   const loginResponses = [];
   let loginRequestFailed = false;
