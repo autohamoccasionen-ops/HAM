@@ -230,7 +230,10 @@ async function selectCategoryByObservedChange(page, row, label) {
 async function clickCategory(page, name) {
   const panel = page.getByRole('tabpanel', { name: 'Quick Click', exact: true });
   const scope = await panel.count() === 1 ? panel : page;
-  const label = scope.getByText(name, { exact: true }).filter({ visible: true });
+  // The same name also appears in the navigation tree. Its DIV is not the
+  // Quick Click checkbox label, which is rendered inside p-checkbox.
+  let label = scope.locator('p-checkbox').getByText(name, { exact: true }).filter({ visible: true });
+  if (await label.count() !== 1) label = scope.getByText(name, { exact: true }).filter({ visible: true });
   if (await label.count() !== 1) throw manual('Teilekategorie nicht eindeutig.');
   const row = label.locator('..');
   let matches = scope.getByRole('checkbox', { name, exact: true });
