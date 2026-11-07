@@ -209,6 +209,31 @@ async function waitForRetailPrice(article){
   await article.filter({hasText:/UVPE\s*:\s*[\d’'.,]+\s*CHF[\s\S]*exkl\.\s*MwSt\./}).waitFor();
 }
 
+async function catalogueSnapshot(page){
+  const rows=await page.evaluate(()=>Array.from(document.querySelectorAll('[id^="part-detail-"]')).slice(0,80).flatMap(card=>{
+    if(!card.getClientRects().length)return [];
+    let root=card,depth=0;
+    while(depth<5&&root.parentElement&&root.parentElement.querySelectorAll('[id^="part-detail-"]').length===1){root=root.parentElement;depth++;}
+    const text=root.innerText||'';
+    if(text.length>24000)return [];
+    const labels=nodes=>Array.from(nodes).flatMap(n=>['alt','aria-label','title'].map(a=>n.getAttribute(a)).filter(Boolean));
+    return [{id:card.id,depth,text,labels:labels(root.querySelectorAll('img[alt],[aria-label],[title]')),
+      imageLabels:labels(root.querySelectorAll('img[alt],img[aria-label],img[title],[role="img"][aria-label]'))}];
+  }));
+  return rows.map(row=>{
+    const imageText=normalizeCatalogText(row.text,[...row.imageLabels,...row.labels.filter(x=>x.trim().toUpperCase()==='VIN')]);
+    const text=/^Katalog-Marke:/m.test(imageText)?imageText:normalizeCatalogText(row.text,row.labels);
+    let partNumber;try{partNumber=articleNumber(text)}catch{partNumber=null}
+    return {...row,text,partNumber};
+  });
+}
+
+function snapshotArticle(page,row){
+  let article=page.locator('[id="'+row.id.replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"]');
+  for(let i=0;i<row.depth;i++)article=article.locator('..');
+  return article;
+}
+
 async function closeHaynesLaunchDialog(page) {
   const dialogs = page.getByRole('dialog').filter({ visible: true });
   for (const dialog of await dialogs.all()) {
@@ -428,31 +453,44 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
-    const cards=await catalogueCards(page);
+    const cards=await catalogueSnapshot(page);
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
-    for(const card of cards){
-      if(!await card.isVisible())continue;
-      const article=await completeArticleContainer(card);
-      let text=await readCatalogCard(article);
+    for(let record of cards){
+      let text=record.text;
       if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
       // The initial result card carries the supplier's VIN fitment badge.
       // Unconfirmed universal alternatives must not become vehicle quotations.
       if(!/\bVIN\b/.test(text))continue;
       if(/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text))continue;
-      await waitForRetailPrice(article);text=await readCatalogCard(article);
+      if(!record.partNumber)continue;
+      for(let attempt=0;attempt<10;attempt++){
+        try{retailPriceCents(text);break}catch{
+          await page.waitForTimeout(200);
+          const fresh=(await catalogueSnapshot(page)).filter(x=>x.partNumber===record.partNumber);
+          if(fresh.length!==1)throw manual('Artikelzuordnung muss geprüft werden.');
+          record=fresh[0];text=record.text;
+        }
+      }
       if(definition.categoryAxle&&!catalogBrand(text,brakeBrands)){
-        const labels=await article.locator('img[alt]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('alt')||'')
-          .map(x=>x.trim()).filter(x=>x&&x.length<=80&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,12));
+        const labels=record.imageLabels.map(x=>x.trim()).filter(x=>x&&x.length<=80&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,12);
         const names=text.split('\n').map(x=>x.trim()).filter(x=>x.length<=100&&/Bremsbel|Bremskl|Belagsatz/i.test(x)).slice(0,3);
         console.info(JSON.stringify({component:'supplier-extra-brand-evidence',category,labels,names}));
       }
       if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope))){
+        const fresh=(await catalogueSnapshot(page)).filter(x=>x.partNumber===record.partNumber);
+        if(fresh.length!==1)throw manual('Artikelzuordnung muss geprüft werden.');
+        record=fresh[0];text=record.text;
+        const article=snapshotArticle(page,record);
         const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
         console.info(JSON.stringify({component:'supplier-extra-progress',step:'product-details',category,detailsCount:await details.count(),quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,brand:catalogBrand(text,brakeBrands),packaged:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text)}));
         if(await details.count()===1){
           try{await clickWithCookieConsent(page,details,{timeout:10000})}
-          catch(error){text=await readCatalogCard(article);if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))throw error}
-          for(let attempt=0;attempt<10;attempt++){text=await readCatalogCard(article);if(components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))break;await page.waitForTimeout(200)}
+          catch(error){const current=(await catalogueSnapshot(page)).filter(x=>x.partNumber===record.partNumber);if(current.length===1)text=current[0].text;if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))throw error}
+          for(let attempt=0;attempt<10;attempt++){
+            const current=(await catalogueSnapshot(page)).filter(x=>x.partNumber===record.partNumber);
+            if(current.length!==1)throw manual('Artikelzuordnung muss geprüft werden.');
+            text=current[0].text;if(components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))break;await page.waitForTimeout(200);
+          }
         }
       }
       entries.push(text);
