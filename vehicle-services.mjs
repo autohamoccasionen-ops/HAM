@@ -1,7 +1,7 @@
 // Category and operation names are supplied by D-Store and HaynesPro.
 // A definition is a lookup rule, never a cached part, price or labour time.
 const brake = (axle, discs) => ({
-  category:'Scheibenbremse', allCategories:true,
+  category:'Scheibenbremse', categoryAxle:axle,
   components:[...(discs?[{kind:axle+'-discs',name:'Bremsscheiben '+(axle==='front'?'Vorderachse':'Hinterachse'),product:'Bremsscheibe',axle}]:[]),
     {kind:axle+'-pads',name:'Bremsbeläge '+(axle==='front'?'Vorderachse':'Hinterachse'),product:'Bremsbelag(?:satz)?',axle}],
   operations:[discs?`Beide Bremsscheiben erneuern (${axle==='front'?'Vorderachse':'Hinterachse'})`:`Bremsbeläge erneuern (${axle==='front'?'Vorderachse':'Hinterachse'})`]

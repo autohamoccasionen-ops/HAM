@@ -352,16 +352,32 @@ async function clickCategory(page, name, explicitLabel) {
 
 async function chooseRequestedMaterials(page,vehicleUrl,names){
   const selected=[];
+  const context=page.context();
   const categories=[...new Set(names.map(name=>vehicleServices[name].category))];
   for(const category of categories){
+    console.info(JSON.stringify({component:'supplier-extra-progress',step:'category',category}));
+    // Release the previous catalogue document before loading another one.
+    // The same ephemeral context retains the normal authenticated session.
+    await page.close();page=await context.newPage();page.setDefaultTimeout(20000);
     await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
     await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
     await page.getByText('Quick Click',{exact:true}).click();
     const definition=vehicleServices[names.find(name=>vehicleServices[name].category===category)];
-    if(definition.allCategories){
+    if(definition.categoryAxle){
       const labels=page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true});
       if(await labels.count()!==2)throw manual('Bremsen-Kategorien müssen eindeutig zugeordnet werden.');
-      for(const label of await labels.all())await clickCategory(page,category,label);
+      const requestedAxles=[...new Set(names.filter(name=>vehicleServices[name].category===category).map(name=>vehicleServices[name].categoryAxle))];
+      const shapes=await labels.evaluateAll(nodes=>nodes.map(n=>{
+        const result=[];let parent=n;
+        for(let i=0;i<7&&parent;i++,parent=parent.parentElement){const t=parent.innerText||'';result.push({tag:parent.tagName,front:/Vorderachse|vorne/i.test(t),rear:/Hinterachse|hinten/i.test(t),length:t.length})}
+        return result;
+      }));
+      console.info(JSON.stringify({component:'supplier-brake-category-shape',shapes}));
+      for(const axle of requestedAxles){
+        const indices=shapes.map((levels,index)=>({index,match:levels.some(x=>axle==='front'?x.front&&!x.rear:x.rear&&!x.front)})).filter(x=>x.match);
+        if(indices.length!==1)throw manual('Bremsen-Kategorien müssen eindeutig zugeordnet werden.');
+        await clickCategory(page,category,(await labels.all())[indices[0].index]);
+      }
     }else await clickCategory(page,category);
     await page.getByRole('button',{name:'Artikel anzeigen',exact:true}).click();
     await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor();
@@ -374,12 +390,16 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
       if(!components.some(c=>componentCandidate(text,c,retailPriceCents))){
         const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
-        if(await details.count()===1){await details.click();await article.getByText(/Einbauseite|benötigte Stückzahl/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article)}
+        if(await details.count()===1){await details.click();await article.getByText(components.some(c=>c.axle)?/Einbauseite/:/benötigte Stückzahl/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article)}
       }
       entries.push(text);
     }
     for(const component of components){
       const candidates=entries.map(text=>componentCandidate(text,component,retailPriceCents)).filter(Boolean);
+      console.info(JSON.stringify({component:'supplier-extra-material-criteria',kind:component.kind,candidateCount:candidates.length,
+        cards:entries.slice(0,30).map(text=>({vin:/\bVIN\b/.test(text),product:new RegExp(component.product,'i').test(text),
+          front:/Einbau(?:seite|ort)\s*:\s*(?:Vorderachse|vorne)/i.test(text),rear:/Einbau(?:seite|ort)\s*:\s*(?:Hinterachse|hinten)/i.test(text),
+          quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,price:/UVPE:/.test(text)}))}));
       const brands=component.axle?['ATE','BREMBO','TRW','TEXTAR','BOSCH','ZIMMERMANN']:['MANN-FILTER','MAHLE','BOSCH'];
       let found;
       for(const brand of brands){
@@ -391,7 +411,10 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       const {brand,...part}=found;selected.push(part);
     }
   }
-  return selected;
+  // The completed product list is no longer needed while reading labour data.
+  await page.close();page=await context.newPage();page.setDefaultTimeout(20000);
+  await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+  return {selected,page};
 }
 
 export async function readQuote(input, credentials) {
@@ -416,7 +439,7 @@ export async function readQuote(input, credentials) {
     consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
   const browser = await chromium.launch({ headless: true, timeout: 30000 }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
-  const page = await context.newPage();
+  let page = await context.newPage();
   const loginResponses = [];
   let loginRequestFailed = false;
   page.on('response', response => {
@@ -519,7 +542,7 @@ export async function readQuote(input, credentials) {
     await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor();
     stage = 'materials-select';
     const parts = await chooseMaterials(page);
-    if(vehicleExtraNames.length){stage='additional-materials';parts.push(...await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames));}
+    if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames);parts.push(...extra.selected);page=extra.page;}
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
     await page.getByRole('link', { name: 'Haynes Pro', exact: true }).click();
@@ -545,7 +568,7 @@ export async function readQuote(input, credentials) {
       let evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
       if(!evidence&&/filter/i.test(vehicleServices[name].category)){
         const filter=haynes.getByText('Filter',{exact:true}).filter({visible:true});
-        if(await filter.count()===1){await filter.click();expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);}
+        if(await filter.count()===1){await filter.click();await haynes.getByText(/(?:Innenraum|Luftfilter|Kraftstofffilter).*(?:erneuern|wechseln)/).first().waitFor({timeout:5000}).catch(()=>{});expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);}
       }
       if(!evidence)throw manual('Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.');
       extraLabour.push({service:name,...evidence});
