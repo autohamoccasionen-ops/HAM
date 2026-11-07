@@ -195,6 +195,16 @@ async function readCatalogCard(card) {
   return normalizeCatalogText(text, labels);
 }
 
+async function catalogueCards(page){
+  const ids=await page.locator('[id^="part-detail-"]').evaluateAll(nodes=>nodes.map(n=>n.id));
+  if(ids.some(id=>!id)||new Set(ids).size!==ids.length)throw manual('Artikelzuordnung muss geprüft werden.');
+  return ids.map(id=>page.locator('[id="'+id.replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"]').filter({visible:true}));
+}
+
+async function waitForRetailPrice(article){
+  await article.filter({hasText:/UVPE\s*:\s*[\d’'.,]+\s*CHF[\s\S]*exkl\.\s*MwSt\./}).waitFor();
+}
+
 async function closeHaynesLaunchDialog(page) {
   const dialogs = page.getByRole('dialog').filter({ visible: true });
   for (const dialog of await dialogs.all()) {
@@ -224,7 +234,7 @@ export function materialCandidate(text, kind) {
 }
 
 async function chooseMaterials(page) {
-  const cards = await page.locator('[id^="part-detail-"]').all();
+  const cards = await catalogueCards(page);
   const entries = [];
   for (const card of cards) {
     if (await card.isVisible()) {
@@ -239,6 +249,8 @@ async function chooseMaterials(page) {
     brandSearch: for (const brand of priorities) {
       for (const entry of entries) {
         if (catalogBrand(entry.text,priorities)!==brand || !(kind === 'filter' ? /Ölfilter/.test(entry.text) : /Verschlussschraube, Ölwanne/.test(entry.text))) continue;
+        await waitForRetailPrice(entry.card);
+        entry.text=await readCatalogCard(entry.card);
         let candidate = materialCandidate(entry.text, kind);
         if (!candidate) {
           const details = entry.card.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
@@ -411,17 +423,12 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
-    const cards=await page.locator('[id^="part-detail-"]').all();
+    const cards=await catalogueCards(page);
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
     for(const card of cards){
       if(!await card.isVisible())continue;
-      const id=await card.getAttribute('id');
-      if(!id)throw manual('Artikelzuordnung muss geprüft werden.');
-      const escaped=id.replace(/\\/g,'\\\\').replace(/"/g,'\\"');
-      const stable=page.locator('[id="'+escaped+'"]').filter({visible:true});
-      if(await stable.count()!==1)throw manual('Artikelzuordnung muss geprüft werden.');
-      const article=await completeArticleContainer(stable);
-      await article.filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF[\s\S]*exkl\.\s*MwSt\./}).waitFor();
+      const article=await completeArticleContainer(card);
+      await waitForRetailPrice(article);
       let text=await readCatalogCard(article);
       if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
       // The initial result card carries the supplier's VIN fitment badge.
@@ -472,7 +479,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
 async function chooseApprovedEngineOil(page,spec){
   await search(page,spec.query);
   const candidates=[];
-  for(const card of await page.locator('[id^="part-detail-"]').all()){
+  for(const card of await catalogueCards(page)){
     if(!await card.isVisible())continue;
     const article=await completeArticleContainer(card);
     let text=await readCatalogCard(article);
@@ -482,6 +489,7 @@ async function chooseApprovedEngineOil(page,spec){
       if(await details.count()===1){await clickWithCookieConsent(page,details);await article.getByText(/Herstellerfreigabe/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article);}
     }
     if(!approvedOilProduct(text,spec))continue;
+    await waitForRetailPrice(article);text=await readCatalogCard(article);
     let price;try{price=retailPriceCents(text)}catch{continue}
     const brand=catalogBrand(text,oilBrands);
     candidates.push({kind:'oil',partNumber:articleNumber(text),description:(brand?brand+' ':'')+'Motoröl SAE '+spec.viscosity+', '+spec.approval,
@@ -696,7 +704,7 @@ export async function readQuote(input, credentials) {
     await search(page, '15F6E6');
     stage = 'oil-product-identification';
     const oilEntries = [];
-    for (const card of await page.locator('[id^="part-detail-"]').all()) {
+    for (const card of await catalogueCards(page)) {
       if (!await card.isVisible()) continue;
       const article = await completeArticleContainer(card);
       const text = await readCatalogCard(article);
@@ -724,6 +732,7 @@ export async function readQuote(input, credentials) {
     }
     stage = 'oil-approval-confirmation';
     await oilCard.getByText('Herstellerfreigabe: MB 229.71', { exact: true }).waitFor();
+    await waitForRetailPrice(oilCard);
     const oilText = await readCatalogCard(oilCard);
     stage = 'oil-package-confirmation';
     if (!oilPackageConfirmed(oilText)) throw manual('Ölgebinde muss geprüft werden.');
