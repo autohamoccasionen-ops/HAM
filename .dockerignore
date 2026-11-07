@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+node_modules
+test
+*.log
+storage-state*.json
+traces
+screenshots
