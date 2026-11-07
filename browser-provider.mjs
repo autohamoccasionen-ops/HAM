@@ -10,6 +10,20 @@ const invalidLogin = /Falsches Passwort|incorrect username or password|Benutzern
 async function rejectVisibleCookieConsent(page) {
   const rejectName = /^(?:(?:alle|alles|cookies)\s+)?ablehnen$|^nur (?:notwendige|erforderliche|essenzielle|essentielle)(?: cookies)?(?: (?:akzeptieren|zulassen|verwenden))?$|^reject(?: all)?$/i;
   for (const frame of page.frames()) {
+    const privacy = frame.locator('#uc-main-dialog');
+    const save = privacy.getByRole('button', { name: 'Einstellungen speichern', exact: true });
+    if (await save.count() === 1 && await save.isVisible()) {
+      // Usercentrics exposes optional categories as named switches. The
+      // essential, disabled category is deliberately never changed.
+      for (const name of ['Funktionell', 'Marketing', 'Analyse']) {
+        const toggle = privacy.getByRole('switch', { name, exact: true });
+        if (await toggle.count() === 1 && await toggle.isVisible() && await toggle.isEnabled()
+          && await toggle.getAttribute('aria-checked') === 'true') await toggle.click();
+      }
+      await save.click();
+      console.info(JSON.stringify({ component: 'supplier-consent', outcome: 'essential-only-saved' }));
+      return;
+    }
     const buttons = frame.getByRole('button', { name: rejectName });
     for (const button of await buttons.all()) {
       if (!await button.isVisible()) continue;
