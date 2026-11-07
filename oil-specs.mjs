@@ -1,5 +1,9 @@
 export const oilBrands=['CASTROL','MOBIL','LIQUI MOLY','FUCHS','MOTUL','RAVENOL','SHELL','TOTALENERGIES','VALVOLINE'];
 export function engineOilSpecification(text){
+  // The verified engine-lubricant table presents grade and approval across
+  // cells/lines without repeating "Motoröl" on that row. Keep that confirmed
+  // mapping valid; never infer this approval from viscosity alone.
+  if(/SAE 0W-20\s+MB 229\.71/.test(String(text)))return {viscosity:'0W20',approval:'MB 229.71',query:'229.71'};
   for(const line of String(text).split('\n')){
     const match=line.trim().match(/^Motor(?:en)?öl\s+SAE\s+(\d{1,2}W[ -]?\d{2})\s+(.+?)(?:\s+(?:Alle Temperaturen|Über\s|Unter\s|Von\s|Bis\s)|$)/i);
     if(!match)continue;

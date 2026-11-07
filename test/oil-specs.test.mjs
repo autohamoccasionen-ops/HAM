@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {engineOilSpecification,approvedOilProduct} from '../oil-specs.mjs';
 test('engine oil lookup derives manufacturer requirements from the vehicle record',()=>{
  assert.deepEqual(engineOilSpecification('Motoröl SAE 0W-20 MB 229.71 Alle Temperaturen'),{viscosity:'0W20',approval:'MB 229.71',query:'229.71'});
+ assert.deepEqual(engineOilSpecification('Motor\nSAE 0W-20\nMB 229.71\nAlle Temperaturen'),{viscosity:'0W20',approval:'MB 229.71',query:'229.71'});
+ assert.equal(engineOilSpecification('Motor\nSAE 0W-20\nACEA C5\nAlle Temperaturen'),null);
  assert.deepEqual(engineOilSpecification('Motoröl SAE 5W-30 VW 504 00 Alle Temperaturen'),{viscosity:'5W30',approval:'VW 504 00',query:'50400'});
  assert.equal(engineOilSpecification('Motoröl SAE 5W-30 ACEA C3 Alle Temperaturen'),null);
 });
