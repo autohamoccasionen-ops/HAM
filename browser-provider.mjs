@@ -153,7 +153,7 @@ function articleNumber(text) {
 
 export function normalizeCatalogText(text, labels = []) {
   let result = String(text).replace(/\bOelfilter\b/gi, 'Ölfilter');
-  const names = ['MAHLE', 'MANN-FILTER', 'BOSCH', 'ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS'];
+  const names = ['MAHLE', 'MANN-FILTER', 'BOSCH', 'ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS','ATE','BREMBO','TRW','TEXTAR','ZIMMERMANN'];
   const normalized = labels.map(label => String(label || '').trim().toUpperCase());
   const brands = names.filter(name => normalized.some(label => [name, `${name} LOGO`, `LOGO ${name}`].includes(label)));
   if (brands.length === 1 && !result.includes(brands[0])) result += '\n' + brands[0];
