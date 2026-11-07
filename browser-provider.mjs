@@ -108,6 +108,16 @@ function interceptedElementCategory(error) {
   return categories.filter(category => entries.some(line => line.toLowerCase().includes(category)));
 }
 
+async function clickWithCookieConsent(page,target,options){
+  try{return await target.click(options)}
+  catch(error){
+    const categories=interceptedElementCategory(error);
+    if(!categories.includes('usercentrics')||categories.includes('captcha')||categories.includes('challenge')
+      ||!await rejectVisibleCookieConsent(page,true))throw error;
+    return target.click(options);
+  }
+}
+
 async function publicConsentControls(page, credentials) {
   const results = [];
   for (const frame of page.frames()) {
@@ -233,7 +243,7 @@ async function chooseMaterials(page) {
         if (!candidate) {
           const details = entry.card.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
           if (await details.count() === 1) {
-            await details.click();
+            await clickWithCookieConsent(page,details);
             await entry.card.getByText(/mit Dichtung|mit Dichtring/).first()
               .waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
             entry.text = await readCatalogCard(entry.card);
@@ -285,14 +295,14 @@ async function selectCategoryByObservedChange(page, row, label, desired = true) 
   })));
   const before = await snapshot();
   if (before.some(item => !item.id || typeof item.checked !== 'boolean')) return false;
-  await label.click();
+  await clickWithCookieConsent(page,label);
   for (let attempt = 0; attempt < 5; attempt++) {
     const after = await snapshot();
     const index = uniqueCheckboxChange(before, after);
     if (index !== null) {
       if (after[index].checked === desired) return true;
       // The category was already selected. Restore it through the same label.
-      await label.click();
+      await clickWithCookieConsent(page,label);
       const restored = await snapshot();
       return restored.length === before.length && restored.every((item, i) => item.id === before[i].id
         && item.checked === (i === index ? desired : before[i].checked));
@@ -336,14 +346,14 @@ async function clickCategory(page, name, explicitLabel, desired = true) {
   if (initial === desired) return;
   // Styled tree checkboxes cover the native input with their visible label.
   // Use that normal user-facing target, then verify actual checked state.
-  await label.click();
+  await clickWithCookieConsent(page,label);
   for (let attempt = 0; attempt < 5; attempt++) {
     if (await checked() === desired) return;
     await page.waitForTimeout(100);
   }
   const wrapper = checkbox.locator('..');
   if (await wrapper.isVisible() && await wrapper.getByRole('checkbox').count() === 1) {
-    await wrapper.click();
+    await clickWithCookieConsent(page,wrapper);
     for (let attempt = 0; attempt < 5; attempt++) {
       if (await checked() === desired) return;
       await page.waitForTimeout(100);
@@ -365,7 +375,7 @@ async function reopenVehicle(page,vehicleUrl,vin){
     await search.or(change).filter({visible:true}).first().waitFor({timeout:30000});
     if(await change.isVisible()){
       if(expected&&new URL(page.url()).pathname.includes(expected)&&await page.getByText(vin,{exact:false}).first().isVisible())return;
-      await change.click();
+      await clickWithCookieConsent(page,change);
     }
     phase='vin-search';await search.waitFor({timeout:10000});
     await search.fill(vin);await search.press('Enter');
@@ -397,7 +407,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
     try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
     catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
     await rejectVisibleCookieConsent(page);
-    await page.getByText('Quick Click',{exact:true}).click();
+    await clickWithCookieConsent(page,page.getByText('Quick Click',{exact:true}));
     await page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true}).first().waitFor();
     // Do not accumulate products from earlier categories in the same portal
     // session. Change normal checkbox controls and verify their actual state.
@@ -425,7 +435,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
         await clickCategory(page,category,(await labels.all())[indices[0].index]);
       }
     }else await clickCategory(page,category);
-    await page.getByRole('button',{name:'Artikel anzeigen',exact:true}).click();
+    await clickWithCookieConsent(page,page.getByRole('button',{name:'Artikel anzeigen',exact:true}));
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'articles-opened',category}));
     await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor();
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
@@ -457,7 +467,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
         const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
         console.info(JSON.stringify({component:'supplier-extra-progress',step:'product-details',category,detailsCount:await details.count(),quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,brand:catalogBrand(text,brakeBrands),packaged:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text)}));
         if(await details.count()===1){
-          try{await details.click({timeout:10000})}
+          try{await clickWithCookieConsent(page,details,{timeout:10000})}
           catch(error){text=await readCatalogCard(article);if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))throw error}
           for(let attempt=0;attempt<10;attempt++){text=await readCatalogCard(article);if(components.some(c=>componentCandidate(text,c,retailPriceCents,scope)))break;await page.waitForTimeout(200)}
         }
@@ -498,7 +508,7 @@ async function chooseApprovedEngineOil(page,spec){
     if(!/Motor(?:en)?öl/i.test(text))continue;
     if(!approvedOilProduct(text,spec)){
       const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
-      if(await details.count()===1){await details.click();await article.getByText(/Herstellerfreigabe/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article);}
+      if(await details.count()===1){await clickWithCookieConsent(page,details);await article.getByText(/Herstellerfreigabe/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article);}
     }
     if(!approvedOilProduct(text,spec))continue;
     let price;try{price=retailPriceCents(text)}catch{continue}
@@ -633,7 +643,7 @@ export async function readQuote(input, credentials) {
     const vehicleExtraNames=(input.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'vehicle-confirmed' }));
     stage = 'materials-tab';
-    await page.getByText('Quick Click', { exact: true }).click();
+    await clickWithCookieConsent(page,page.getByText('Quick Click', { exact: true }));
     console.info(JSON.stringify({component:'supplier-service-categories', names:await page.locator('p-checkbox')
       .evaluateAll(nodes=>nodes.map(n=>n.innerText.trim()).filter(text=>text&&text.length<100).slice(0,80))}));
     stage = 'materials-filter-category';
@@ -641,7 +651,7 @@ export async function readQuote(input, credentials) {
     stage = 'materials-drain-category';
     await clickCategory(page, 'Ablassschraube Ölwanne');
     stage = 'materials-open-list';
-    await page.getByRole('button', { name: 'Artikel anzeigen', exact: true }).click();
+    await clickWithCookieConsent(page,page.getByRole('button', { name: 'Artikel anzeigen', exact: true }));
     stage = 'materials-wait-list';
     await page.locator('[id^="part-detail-"]').first().waitFor();
     // A price response arrives after the product cards. Wait for a displayed
@@ -653,9 +663,9 @@ export async function readQuote(input, credentials) {
     if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames,input.vin);parts.push(...extra.selected);page=extra.page;}
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
-    await page.getByRole('link', { name: 'Haynes Pro', exact: true }).click();
+    await clickWithCookieConsent(page,page.getByRole('link', { name: 'Haynes Pro', exact: true }));
     const popup = context.waitForEvent('page');
-    await page.getByRole('button', { name: 'Hier geht es zu HaynesPro', exact: true }).click();
+    await clickWithCookieConsent(page,page.getByRole('button', { name: 'Hier geht es zu HaynesPro', exact: true }));
     const haynes = await popup;
     haynes.setDefaultTimeout(20000);
     await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
