@@ -356,13 +356,29 @@ async function reopenVehicle(page,vehicleUrl,vin){
   // A deep vehicle URL alone does not restore the portal's in-memory vehicle
   // selection after a full navigation. Use its normal home-page VIN search.
   await page.goto(`${DSTORE}/dch-ax/home`,{waitUntil:'domcontentloaded'});
-  const search=page.getByPlaceholder('VIN bzw. Chassis-Nummer',{exact:true});
-  await search.waitFor({timeout:30000});
-  await search.fill(vin);await search.press('Enter');
-  await page.getByText(vin,{exact:false}).first().waitFor({state:'visible',timeout:30000});
-  await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
   const expected=new URL(vehicleUrl).pathname.match(/\/vehicle\/V\d+M\d+\//)?.[0];
-  if(!expected||!new URL(page.url()).pathname.includes(expected))throw manual('Fahrzeugzuordnung nicht bestätigt.');
+  const search=page.getByPlaceholder('VIN bzw. Chassis-Nummer',{exact:true});
+  const change=page.getByRole('button',{name:'Fahrzeug ändern',exact:true});
+  let phase='home-ready';
+  try{
+    await search.or(change).first().waitFor({timeout:30000});
+    if(await change.isVisible()){
+      if(expected&&new URL(page.url()).pathname.includes(expected)&&await page.getByText(vin,{exact:false}).first().isVisible())return;
+      await change.click();
+    }
+    phase='vin-search';await search.waitFor({timeout:10000});
+    await search.fill(vin);await search.press('Enter');
+    phase='vin-confirmation';
+    await page.getByText(vin,{exact:false}).first().waitFor({state:'visible',timeout:30000});
+    await change.waitFor();
+    if(!expected||!new URL(page.url()).pathname.includes(expected))throw manual('Fahrzeugzuordnung nicht bestätigt.');
+  }catch(error){
+    console.warn(JSON.stringify({component:'supplier-vehicle-reopen',phase,
+      vinSearchVisible:await search.isVisible().catch(()=>false),changeVisible:await change.isVisible().catch(()=>false),
+      loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),
+      expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));
+    throw error;
+  }
 }
 
 async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
@@ -518,7 +534,8 @@ export async function readQuote(input, credentials) {
     pointerIntercepted: /intercepts pointer events/.test(error?.message || ''),
     interceptedElementCategories: interceptedElementCategory(error),
     consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
-  const browser = await chromium.launch({ headless: true, timeout: 30000 }).catch(error => { reportFailure(error); throw error; });
+  const browser = await chromium.launch({ headless: true, timeout: 30000,
+    args:['--js-flags=--max-old-space-size=128'] }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
   // Keep the free service's memory available for catalogue and labour data.
   // Product names, prices, fitment badges and image alt labels remain in the
