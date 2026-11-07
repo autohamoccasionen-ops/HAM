@@ -183,19 +183,40 @@ async function chooseMaterials(page) {
   });
 }
 
+export function categoryCheckboxState(element) {
+  const input = element.type === 'checkbox' ? element : element.querySelector?.('input[type="checkbox"]');
+  if (input && typeof input.checked === 'boolean') return input.checked;
+  const aria = element.getAttribute?.('aria-checked');
+  if (aria === 'true') return true;
+  if (aria === 'false') return false;
+  return null;
+}
+
 async function clickCategory(page, name) {
   const label = page.getByText(name, { exact: true });
   if (await label.count() !== 1) throw manual('Teilekategorie nicht eindeutig.');
   const row = label.locator('..');
-  const checkbox = row.getByRole('checkbox');
-  if (await checkbox.count() !== 1) throw manual('Teileauswahl muss geprüft werden.');
-  if (await checkbox.isChecked()) return;
+  const matches = row.getByRole('checkbox');
+  if (await matches.count() !== 1) throw manual('Teileauswahl muss geprüft werden.');
+  const checkbox = matches.first();
+  const checked = () => checkbox.evaluate(categoryCheckboxState);
+  const initial = await checked();
+  if (initial === null) throw manual('Teileauswahl muss geprüft werden.');
+  if (initial) return;
   // Styled tree checkboxes cover the native input with their visible label.
   // Use that normal user-facing target, then verify actual checked state.
   await label.click();
   for (let attempt = 0; attempt < 5; attempt++) {
-    if (await checkbox.isChecked()) return;
+    if (await checked() === true) return;
     await page.waitForTimeout(100);
+  }
+  const wrapper = checkbox.locator('..');
+  if (await wrapper.isVisible() && await wrapper.getByRole('checkbox').count() === 1) {
+    await wrapper.click();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (await checked() === true) return;
+      await page.waitForTimeout(100);
+    }
   }
   throw manual('Teileauswahl muss geprüft werden.');
 }
@@ -209,6 +230,8 @@ export async function readQuote(input, credentials) {
     interaction: /locator\.click: Timeout/.test(error?.message || '') ? 'click'
       : /locator\.check: Timeout/.test(error?.message || '') ? 'check'
       : /locator\.waitFor: Timeout/.test(error?.message || '') ? 'wait' : 'other',
+    controlError: /not a checkbox|not a radio/i.test(error?.message || '') ? 'UNSUPPORTED_NATIVE_CHECK'
+      : /strict mode violation/i.test(error?.message || '') ? 'AMBIGUOUS_CONTROL' : null,
     consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
   const browser = await chromium.launch({ headless: true }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
@@ -270,6 +293,7 @@ export async function readQuote(input, credentials) {
     }
     await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).waitFor({ timeout: 45000 });
     await checkLogin(page);
+    console.info(JSON.stringify({ component: 'supplier-progress', stage: 'login-confirmed' }));
     stage = 'vehicle-lookup';
     const vin = page.getByPlaceholder('VIN bzw. Chassis-Nummer', { exact: true });
     await vin.fill(input.vin);
@@ -293,6 +317,7 @@ export async function readQuote(input, credentials) {
       if (description.includes(input.vin) && description.length <= 800) { vehicle = description; break; }
     }
     if (!vehicle) throw manual('Fahrzeugzuordnung nicht bestätigt.');
+    console.info(JSON.stringify({ component: 'supplier-progress', stage: 'vehicle-confirmed' }));
     stage = 'materials-tab';
     await page.getByText('Quick Click', { exact: true }).click();
     stage = 'materials-filter-category';
@@ -309,6 +334,7 @@ export async function readQuote(input, credentials) {
     await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor();
     stage = 'materials-select';
     const parts = await chooseMaterials(page);
+    console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
     await page.getByRole('link', { name: 'Haynes Pro', exact: true }).click();
     const popup = context.waitForEvent('page');
@@ -348,6 +374,15 @@ export async function readQuote(input, credentials) {
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {
+    if (stage === 'materials-filter-category' || stage === 'materials-drain-category') {
+      const categoryName = stage === 'materials-filter-category' ? 'Oelfilter' : 'Ablassschraube Ölwanne';
+      const controls = await page.getByText(categoryName, { exact: true }).locator('..').getByRole('checkbox')
+        .evaluateAll(nodes => nodes.map(node => ({ tag: node.tagName, role: node.getAttribute('role'),
+          type: node.getAttribute('type'), ariaChecked: node.getAttribute('aria-checked'),
+          hasNativeInput: !!node.querySelector('input[type="checkbox"]'), parentTag: node.parentElement?.tagName,
+          parentClass: String(node.parentElement?.className || '').slice(0, 120) }))).catch(() => []);
+      console.warn(JSON.stringify({ component: 'supplier-category-controls', stage, controls }));
+    }
     if (stage === 'consent') console.warn(JSON.stringify({ component: 'supplier-consent-controls',
       publicButtonLabels: await publicConsentControls(page, credentials).catch(() => []) }));
     if (stage === 'login-submit') {
