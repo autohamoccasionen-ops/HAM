@@ -263,12 +263,25 @@ export async function readQuote(input, credentials) {
     const vin = page.getByPlaceholder('VIN bzw. Chassis-Nummer', { exact: true });
     await vin.fill(input.vin);
     await vin.press('Enter');
+    stage = 'vehicle-vin-confirmation';
+    // The account can reopen its previously selected vehicle. The change-
+    // vehicle button alone is therefore not evidence that this VIN resolved.
+    await page.getByText(input.vin, { exact: false }).first().waitFor({ state: 'visible', timeout: 30000 });
     await page.getByRole('button', { name: 'Fahrzeug ändern', exact: true }).waitFor();
     const text = await visibleText(page);
     if (!text.includes(input.vin)) throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
-    const vehicle = clean(await page.getByRole('heading', { level: 3 }).first().locator('..').innerText());
+    stage = 'vehicle-route-confirmation';
     const vehicleId = new URL(page.url()).pathname.match(/\/vehicle\/V(\d+)M\d+\//)?.[1];
-    if (!vehicleId || !vehicle.includes(input.vin)) throw manual('Fahrzeugzuordnung nicht bestätigt.');
+    if (!vehicleId) throw manual('Fahrzeugzuordnung nicht bestätigt.');
+    stage = 'vehicle-header-confirmation';
+    let vehicle = '';
+    let vehicleRegion = page.getByRole('heading', { level: 3 }).first();
+    for (let depth = 0; depth < 4; depth++) {
+      vehicleRegion = vehicleRegion.locator('..');
+      const description = clean(await vehicleRegion.innerText());
+      if (description.includes(input.vin) && description.length <= 800) { vehicle = description; break; }
+    }
+    if (!vehicle) throw manual('Fahrzeugzuordnung nicht bestätigt.');
     stage = 'material-selection';
     await page.getByRole('tab', { name: 'Quick Click', exact: true }).click();
     await clickCategory(page, 'Oelfilter');
