@@ -35,24 +35,44 @@ export async function saveEssentialConsentInPage(timeoutMs = 10000) {
   } finally { clearTimeout(timer); }
 }
 
-async function rejectVisibleCookieConsent(page) {
-  let consent;
-  try { consent = await page.evaluate(saveEssentialConsentInPage); }
+export async function consentWithFallback(ui, api) {
+  if (await ui()) return true;
+  let result;
+  try { result = await api(); }
   catch (error) {
+    // Initialization failure has not changed any consent. A normal visible UI
+    // action is still safe. Never retry a partial save or an age-verification wall.
+    if (/CMP_TIMEOUT_initialize/.test(String(error?.message || '')) && await ui()) return true;
+    throw error;
+  }
+  if (result === 'manual-required') throw new QuoteError('SOURCE_UNAVAILABLE', 'Der Datenanbieter erfordert eine manuelle Prüfung.', 503);
+  return result === 'essential-only-saved' || await ui();
+}
+
+async function rejectVisibleCookieConsent(page, waitForUI = false) {
+  if (waitForUI) {
+    await page.locator('[id*="usercentrics"]').getByRole('button').first()
+      .waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+  }
+  try {
+    return await consentWithFallback(() => clickVisibleCookieConsent(page), async () => {
+      const result = await page.evaluate(saveEssentialConsentInPage);
+      if (result === 'essential-only-saved') console.info(JSON.stringify({ component: 'supplier-consent', outcome: 'essential-only-api-saved' }));
+      return result;
+    });
+  } catch (error) {
     const phase = String(error?.message || '').match(/CMP_TIMEOUT_(initialize|deny|save|close)/)?.[1];
     if (!phase) throw error;
     console.warn(JSON.stringify({ component: 'supplier-consent', outcome: 'timeout', phase }));
     throw new QuoteError('CONSENT_UNAVAILABLE', 'Das Cookie-Fenster des Datenanbieters konnte nicht abgeschlossen werden.', 503);
   }
-  if (consent === 'manual-required') throw new QuoteError('SOURCE_UNAVAILABLE', 'Der Datenanbieter erfordert eine manuelle Prüfung.', 503);
-  if (consent === 'essential-only-saved') {
-    console.info(JSON.stringify({ component: 'supplier-consent', outcome: 'essential-only-api-saved' }));
-    return true;
-  }
+}
+
+async function clickVisibleCookieConsent(page) {
   const rejectName = /^(?:(?:alle|alles|cookies)\s+)?ablehnen$|^nur (?:notwendige|erforderliche|essenzielle|essentielle)(?: cookies)?(?: (?:akzeptieren|zulassen|verwenden))?$|^reject(?: all)?$/i;
   for (const frame of page.frames()) {
     const privacy = frame.locator('#uc-main-dialog');
-    const save = privacy.getByRole('button', { name: 'Einstellungen speichern', exact: true });
+    const save = privacy.getByRole('button', { name: /^(Einstellungen speichern|Auswahl speichern|Save settings|Save preferences)$/i });
     if (await save.count() === 1 && await save.isVisible()) {
       // Usercentrics exposes optional categories as named switches. The
       // essential, disabled category is deliberately never changed.
@@ -90,7 +110,7 @@ async function publicConsentControls(page, credentials) {
   const results = [];
   for (const frame of page.frames()) {
     // Only public CMP control labels, never auth fields or whole-page text.
-    const hosts = frame.locator('[id*="usercentrics"]').filter({ visible: true });
+    const hosts = frame.locator('[id*="usercentrics"]');
     for (const host of await hosts.all()) {
       const labels = await host.getByRole('button').allTextContents();
       results.push(...labels.map(clean).filter(label => label && label.length <= 80
@@ -208,7 +228,9 @@ export async function readQuote(input, credentials) {
   try {
     stage = 'login-page';
     await page.goto(`${DSTORE}/dch-ax/login`, { waitUntil: 'domcontentloaded' });
-    await rejectVisibleCookieConsent(page);
+    stage = 'consent';
+    let consentHandled = await rejectVisibleCookieConsent(page, true);
+    stage = 'login-input';
     const username = page.locator('input[name="userName"]');
     const password = page.locator('input[type="password"]');
     await username.fill(credentials.username);
@@ -217,7 +239,7 @@ export async function readQuote(input, credentials) {
     await password.press('Tab');
     // Consent can appear after the initial form render. Resolve the visible
     // rejection control again after entry; never force-click through overlays.
-    await rejectVisibleCookieConsent(page);
+    if (!consentHandled) consentHandled = await rejectVisibleCookieConsent(page);
     const loginButton = page.getByRole('button', { name: 'Einloggen', exact: true });
     console.info(JSON.stringify({ component: 'supplier-login-ready',
       usernameHasOuterWhitespace: credentials.username !== credentials.username.trim(),
@@ -296,6 +318,8 @@ export async function readQuote(input, credentials) {
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {
+    if (stage === 'consent') console.warn(JSON.stringify({ component: 'supplier-consent-controls',
+      publicButtonLabels: await publicConsentControls(page, credentials).catch(() => []) }));
     if (stage === 'login-submit') {
       // Read only visible text and record fixed booleans, never login values,
       // page contents, URLs, cookies, screenshots or raw browser errors.

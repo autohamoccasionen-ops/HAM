@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { saveEssentialConsentInPage } from '../browser-provider.mjs';
+import { saveEssentialConsentInPage, consentWithFallback } from '../browser-provider.mjs';
 
 async function withCmp(cmp, run) {
   const previous = globalThis.window;
@@ -40,4 +40,26 @@ test('an unresponsive privacy SDK times out without proceeding to consent or clo
     denyAllConsents: async () => assert.fail('must not proceed'), closeCmp: async () => assert.fail('must not close') }, async () => {
     await assert.rejects(() => saveEssentialConsentInPage(10), /CMP_TIMEOUT_initialize/);
   });
+});
+
+test('visible cookie controls take precedence over an unresponsive SDK', async () => {
+  assert.equal(await consentWithFallback(async () => true, async () => assert.fail('SDK unnecessary')), true);
+});
+
+test('a late visible cookie dialog can recover from initialization timeout', async () => {
+  let checks = 0;
+  assert.equal(await consentWithFallback(async () => ++checks === 2,
+    async () => { throw new Error('CMP_TIMEOUT_initialize'); }), true);
+  assert.equal(checks, 2);
+});
+
+test('partial consent saves and verification requirements never trigger a fallback click', async () => {
+  for (const outcome of ['CMP_TIMEOUT_save', 'manual-required']) {
+    let checks = 0;
+    await assert.rejects(() => consentWithFallback(async () => { ++checks; return false; }, async () => {
+      if (outcome === 'manual-required') return outcome;
+      throw new Error(outcome);
+    }));
+    assert.equal(checks, 1);
+  }
 });

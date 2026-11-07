@@ -14,7 +14,7 @@ connection. No real vehicle data or credentials belong in this repository.
 
 Automatic quotations are not production-ready and must remain disabled until
 a complete hosted supplier lookup has been verified. The customer website has
-not been connected to the unverified lookup. Seventeen automated tests pass;
+not been connected to the unverified lookup. Twenty automated tests pass;
 they cover calculations, HTTP behavior and consent safeguards, not supplier
 end-to-end availability. Credentials and internal operational diagnostics must
 not be published in this public repository.
