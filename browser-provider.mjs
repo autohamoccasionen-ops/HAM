@@ -196,7 +196,20 @@ async function clickCategory(page, name) {
   const label = page.getByText(name, { exact: true });
   if (await label.count() !== 1) throw manual('Teilekategorie nicht eindeutig.');
   const row = label.locator('..');
-  const matches = row.getByRole('checkbox');
+  let matches = page.getByRole('checkbox', { name, exact: true });
+  if (await matches.count() !== 1) matches = page.getByLabel(name, { exact: true });
+  if (await matches.count() !== 1) {
+    // Some category layouts put two controls in the same row. Resolve the
+    // native label association instead of choosing the first checkbox.
+    const candidates = await row.getByRole('checkbox').all();
+    const associated = [];
+    for (const candidate of candidates) {
+      if (await candidate.evaluate((node, text) => Array.from(node.labels || [])
+        .some(label => label.innerText.trim() === text), name)) associated.push(candidate);
+    }
+    if (associated.length === 1) matches = associated[0];
+    else matches = row.getByRole('checkbox');
+  }
   if (await matches.count() !== 1) throw manual('Teileauswahl muss geprüft werden.');
   const checkbox = matches.first();
   const checked = () => checkbox.evaluate(categoryCheckboxState);
