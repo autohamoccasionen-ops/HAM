@@ -150,6 +150,33 @@ function articleNumber(text) {
   return match[1].trim();
 }
 
+export function normalizeCatalogText(text, labels = []) {
+  let result = String(text).replace(/\bOelfilter\b/gi, 'Ölfilter');
+  const names = ['MAHLE', 'MANN-FILTER', 'BOSCH', 'ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS'];
+  const normalized = labels.map(label => String(label || '').trim().toUpperCase());
+  const brands = names.filter(name => normalized.some(label => [name, `${name} LOGO`, `LOGO ${name}`].includes(label)));
+  if (brands.length === 1 && !result.includes(brands[0])) result += '\n' + brands[0];
+  if (normalized.includes('VIN') && !/\bVIN\b/.test(result)) result += '\nVIN';
+  return result;
+}
+
+async function completeArticleContainer(card) {
+  let article = card;
+  for (let depth = 0; depth < 5; depth++) {
+    const parent = article.locator('..');
+    if (await parent.locator('[id^="part-detail-"]').count() !== 1) break;
+    article = parent;
+  }
+  return article;
+}
+
+async function readCatalogCard(card) {
+  const text = await card.innerText();
+  const labels = await card.locator('img[alt], [aria-label], [title]').evaluateAll(nodes => nodes.flatMap(node =>
+    ['alt', 'aria-label', 'title'].map(attribute => node.getAttribute(attribute)).filter(Boolean)));
+  return normalizeCatalogText(text, labels);
+}
+
 export function materialCandidate(text, kind) {
   text = clean(text);
   if (!/\bVIN\b/.test(text) || /Auf Anfrage|ABVERKAUFSARTIKEL|\d+ Stück = 1 Pack/.test(text)) return null;
@@ -168,7 +195,10 @@ async function chooseMaterials(page) {
   const cards = await page.locator('[id^="part-detail-"]').all();
   const entries = [];
   for (const card of cards) {
-    if (await card.isVisible()) entries.push({ card, text: await card.innerText() });
+    if (await card.isVisible()) {
+      const article = await completeArticleContainer(card);
+      entries.push({ card: article, text: await readCatalogCard(article) });
+    }
   }
   const selectedParts = [];
   for (const kind of ['filter', 'drain-plug']) {
@@ -184,7 +214,7 @@ async function chooseMaterials(page) {
             await details.click();
             await entry.card.getByText(/mit Dichtung|mit Dichtring/).first()
               .waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-            entry.text = await entry.card.innerText();
+            entry.text = await readCatalogCard(entry.card);
             candidate = materialCandidate(entry.text, kind);
           }
         }
