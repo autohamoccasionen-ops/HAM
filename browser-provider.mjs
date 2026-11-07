@@ -360,10 +360,10 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const {category,axle}=group;
     const groupNames=names.filter(name=>vehicleServices[name].category===category&&vehicleServices[name].categoryAxle===axle);
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'category',category}));
-    // Return through the portal's own navigation in the same tab. A separate
-    // tab does not carry the supplier's normal per-tab session state.
-    await page.goBack({waitUntil:'domcontentloaded'});
-    if(page.url()!==vehicleUrl)await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+    // Reload the already observed vehicle URL in the same tab. This retains
+    // normal per-tab session storage while releasing the previous Angular
+    // product catalogue rather than keeping it in SPA history memory.
+    await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
     try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
     catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
     await page.getByText('Quick Click',{exact:true}).click();
@@ -453,8 +453,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     previousCategories=[category];
   }
   // Leave the completed product list before opening the labour-data tab.
-  await page.goBack({waitUntil:'domcontentloaded'});
-  if(page.url()!==vehicleUrl)await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+  await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
   return {selected,page};
 }
 
