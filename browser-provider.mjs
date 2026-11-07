@@ -7,6 +7,29 @@ const clean = text => String(text).replace(/\u00a0/g, ' ').trim();
 const manual = message => new QuoteError('MANUAL_REVIEW_REQUIRED', message);
 const invalidLogin = /Falsches Passwort|incorrect username or password|Benutzername.*ungültig|Sitzung ist abgelaufen|(?:Benutzername|Passwort|Zugangsdaten|Anmeldedaten)[^\n]{0,100}(?:falsch|ungültig|nicht korrekt)|(?:falsch|ungültig)[^\n]{0,60}(?:Benutzername|Passwort|Zugangsdaten|Anmeldedaten)/i;
 
+async function rejectVisibleCookieConsent(page) {
+  const rejectName = /^(?:(?:alle|alles|cookies)\s+)?ablehnen$|^nur (?:notwendige|erforderliche|essenzielle|essentielle)(?: cookies)?(?: (?:akzeptieren|zulassen|verwenden))?$|^reject(?: all)?$/i;
+  for (const frame of page.frames()) {
+    const buttons = frame.getByRole('button', { name: rejectName });
+    for (const button of await buttons.all()) {
+      if (!await button.isVisible()) continue;
+      const text = await frame.locator('body').innerText();
+      if (!/cookie|datenschutz|privacy|consent/i.test(text)) continue;
+      if (/verify you are human|checking your browser|automated traffic|captcha/i.test(text)) {
+        throw new QuoteError('SOURCE_UNAVAILABLE', 'Der Datenanbieter erfordert eine manuelle Prüfung.', 503);
+      }
+      await button.click();
+      return;
+    }
+  }
+}
+
+function interceptedElementCategory(error) {
+  const entries = String(error?.message || '').split('\n').filter(line => /intercepts pointer events/.test(line));
+  const categories = ['cookie', 'consent', 'usercentrics', 'onetrust', 'dialog', 'modal', 'loading', 'spinner', 'blockui', 'captcha', 'challenge'];
+  return categories.filter(category => entries.some(line => line.toLowerCase().includes(category)));
+}
+
 async function checkLogin(page) {
   const text = await page.locator('body').innerText();
   if (invalidLogin.test(text)) {
@@ -103,8 +126,7 @@ export async function readQuote(input, credentials) {
   try {
     stage = 'login-page';
     await page.goto(`${DSTORE}/dch-ax/login`, { waitUntil: 'domcontentloaded' });
-    const rejectCookies = page.getByRole('button', { name: 'Ablehnen', exact: true });
-    if (await rejectCookies.isVisible()) await rejectCookies.click();
+    await rejectVisibleCookieConsent(page);
     const username = page.locator('input[name="userName"]');
     const password = page.locator('input[type="password"]');
     await username.fill(credentials.username);
@@ -113,7 +135,7 @@ export async function readQuote(input, credentials) {
     await password.press('Tab');
     // Consent can appear after the initial form render. Resolve the visible
     // rejection control again after entry; never force-click through overlays.
-    if (await rejectCookies.isVisible()) await rejectCookies.click();
+    await rejectVisibleCookieConsent(page);
     const loginButton = page.getByRole('button', { name: 'Einloggen', exact: true });
     console.info(JSON.stringify({ component: 'supplier-login-ready',
       usernameHasOuterWhitespace: credentials.username !== credentials.username.trim(),
@@ -195,6 +217,8 @@ export async function readQuote(input, credentials) {
           loginButtonEnabled: await page.getByRole('button', { name: 'Einloggen', exact: true }).isEnabled(),
           cookieRejectVisible: await page.getByRole('button', { name: 'Ablehnen', exact: true }).isVisible(),
           pointerIntercepted: /intercepts pointer events/.test(error?.message || ''),
+          interceptedElementCategories: interceptedElementCategory(error),
+          iframeCount: page.frames().length - 1,
           clickTimedOut: /locator\.click: Timeout/.test(error?.message || ''),
           postResponseStatuses: loginResponses.slice(0, 10), loginRequestFailed }));
       } catch (loginError) {
