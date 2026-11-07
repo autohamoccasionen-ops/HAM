@@ -352,15 +352,15 @@ async function clickCategory(page, name, explicitLabel) {
 
 async function chooseRequestedMaterials(page,vehicleUrl,names){
   const selected=[];
-  const context=page.context();
   const categories=[...new Set(names.map(name=>vehicleServices[name].category))];
   for(const category of categories){
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'category',category}));
-    // Release the previous catalogue document before loading another one.
-    // The same ephemeral context retains the normal authenticated session.
-    await page.close();page=await context.newPage();page.setDefaultTimeout(20000);
-    await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
-    await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
+    // Return through the portal's own navigation in the same tab. A separate
+    // tab does not carry the supplier's normal per-tab session state.
+    await page.goBack({waitUntil:'domcontentloaded'});
+    if(page.url()!==vehicleUrl)await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+    try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
+    catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
     await page.getByText('Quick Click',{exact:true}).click();
     const definition=vehicleServices[names.find(name=>vehicleServices[name].category===category)];
     if(definition.categoryAxle){
@@ -411,9 +411,9 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       const {brand,...part}=found;selected.push(part);
     }
   }
-  // The completed product list is no longer needed while reading labour data.
-  await page.close();page=await context.newPage();page.setDefaultTimeout(20000);
-  await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+  // Leave the completed product list before opening the labour-data tab.
+  await page.goBack({waitUntil:'domcontentloaded'});
+  if(page.url()!==vehicleUrl)await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
   return {selected,page};
 }
 
