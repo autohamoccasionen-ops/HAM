@@ -3,21 +3,15 @@
 Server-side calculation and read-only D-Store / HaynesPro integration for a
 Motoröl-Service. The original website is a separate application.
 
-## Deployment status
+## Deployment and verification
 
-The HTTP service can run independently, but **live automatic quotations must
-remain disabled until the hosted vendor login and complete lookup are tested**.
-A healthy `/healthz` response confirms the HTTP process, not a working vendor
-connection. No real vehicle data or credentials belong in this repository.
-
-### Verification status
-
-Automatic quotations are not production-ready and must remain disabled until
-a complete hosted supplier lookup has been verified. The customer website has
-not been connected to the unverified lookup. Twenty-four automated tests pass;
-they cover calculations, HTTP behavior and consent safeguards, not supplier
-end-to-end availability. Credentials and internal operational diagnostics must
-not be published in this public repository.
+Enable automatic quotations only after a complete hosted supplier lookup has
+been verified for the supported scope. A healthy `/healthz` response confirms
+the HTTP process alone. The authenticated status endpoint reports whether this
+process has completed a quotation and the timestamp of its latest success.
+Twenty-four automated tests cover calculations, HTTP behavior and consent
+safeguards; they do not prove ongoing supplier availability. Never publish real
+vehicle data, credentials or private operational diagnostics in this repository.
 
 ## Runtime configuration
 
@@ -27,7 +21,7 @@ Set these values in Render's **Environment** settings:
 - `DSTORE_PASSWORD`: existing D-Store password (never share it in chat).
 - `QUOTE_SERVICE_TOKEN`: server-to-server bearer secret, at least 32 characters.
 - `QUOTE_AUTOMATION_ENABLED`: defaults to `false`; set to `true` only for a
-  controlled integration test after credentials have been configured.
+  verified supported integration after credentials have been configured.
 
 Keep the token and credentials out of frontend JavaScript, source control,
 browser storage, request URLs and logs. The website will need a server-side
@@ -45,8 +39,8 @@ proxy; do not call this API with the secret directly from browser code.
 
 ## Current integration limits
 
-- The browser adapter is **not live-verified from Render**. Vendor page changes,
-  login challenges and account restrictions must be handled before activation.
+- Supplier page changes, login challenges and ambiguous data cause manual review;
+  a past successful lookup does not guarantee future availability.
 - Only Motoröl-Service without extras is implemented. Other selections require
   manual review. This is not an all-services / all-VIN production release.
 - Initial oil mapping: Castrol 0W-20 C5 SKU 15F6E6, only when HaynesPro explicitly
@@ -64,7 +58,7 @@ proxy; do not call this API with the secret directly from browser code.
 ## Validation
 
 Run `npm test` for pure parsing/calculation and HTTP contract tests. These tests
-do not start a browser or access any supplier account. A separate real hosted
-end-to-end test is still required before connecting the customer website.
+do not start a browser or access any supplier account. Perform a separate real hosted
+end-to-end test before enabling a new vehicle specification or website flow.
 
 Use the same pinned version of Playwright for npm and the official Docker image.

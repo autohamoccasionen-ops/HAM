@@ -58,11 +58,15 @@ test('missing credentials and disabled mode cannot produce a quotation', async (
 test('complete authenticated contract returns a calculated quote without credentials or purchase prices', async () => {
   const events = [];
   await withServer({ env, provider: async request => { assert.deepEqual(request, input); return source; }, audit: e => events.push(e) }, async base => {
+    assert.equal((await (await fetch(base + '/api/status', { headers })).json()).liveConnectionVerified, false);
     const response = await fetch(base + '/api/quotes', { method: 'POST', headers, body: JSON.stringify(input) });
     assert.equal(response.status, 200);
     const data = await response.json();
     assert.equal(data.totalCents, 57920);
     assert.equal(data.labour.hourlyRateNetCents, 15000);
+    const status = await (await fetch(base + '/api/status', { headers })).json();
+    assert.equal(status.liveConnectionVerified, true);
+    assert.ok(Number.isFinite(Date.parse(status.lastSuccessfulQuoteAt)));
     assert.ok(!JSON.stringify(data).includes(env.DSTORE_PASSWORD));
     assert.ok(!JSON.stringify(events).includes(input.vin));
     assert.ok(!JSON.stringify(events).includes(env.DSTORE_USERNAME));

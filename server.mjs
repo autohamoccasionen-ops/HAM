@@ -45,6 +45,7 @@ async function readBody(req) {
 export function createApp({ env = process.env, provider, audit = () => {} } = {}) {
   let active = false;
   let lastError = null;
+  let lastSuccessfulQuoteAt = null;
   const credentialsConfigured = () => !!(env.DSTORE_USERNAME && env.DSTORE_PASSWORD && env.QUOTE_SERVICE_TOKEN?.length >= 32);
   return async function handle(req, res) {
     const path = new URL(req.url, 'http://localhost').pathname;
@@ -56,7 +57,8 @@ export function createApp({ env = process.env, provider, audit = () => {} } = {}
     if (!authenticated(req, env.QUOTE_SERVICE_TOKEN)) return send(res, 401, { error: 'UNAUTHORIZED' });
     if (req.method === 'GET' && path === '/api/status') {
       return send(res, 200, { status: credentialsConfigured() ? (env.QUOTE_AUTOMATION_ENABLED === 'true' ? 'enabled' : 'disabled') : 'not-configured',
-        busy: active, lastError, liveConnectionVerified: false, supportedServices: ['oel-service'] });
+        busy: active, lastError, liveConnectionVerified: !!lastSuccessfulQuoteAt, lastSuccessfulQuoteAt,
+        supportedServices: ['oel-service'] });
     }
     if (req.method !== 'POST' || path !== '/api/quotes') return send(res, 404, { error: 'NOT_FOUND' });
     const requestId = randomUUID();
@@ -73,6 +75,7 @@ export function createApp({ env = process.env, provider, audit = () => {} } = {}
       const result = await readQuote(input, { username: env.DSTORE_USERNAME, password: env.DSTORE_PASSWORD });
       const quote = calculateQuote(input, result);
       lastError = null;
+      lastSuccessfulQuoteAt = new Date().toISOString();
       audit({ requestId, outcome: 'quoted', elapsedMs: Date.now() - start });
       return send(res, 200, { ...quote, requestId });
     } catch (error) {
