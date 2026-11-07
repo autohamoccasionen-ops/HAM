@@ -189,7 +189,15 @@ async function clickCategory(page, name) {
   const row = label.locator('..');
   const checkbox = row.getByRole('checkbox');
   if (await checkbox.count() !== 1) throw manual('Teileauswahl muss geprüft werden.');
-  await checkbox.check();
+  if (await checkbox.isChecked()) return;
+  // Styled tree checkboxes cover the native input with their visible label.
+  // Use that normal user-facing target, then verify actual checked state.
+  await label.click();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (await checkbox.isChecked()) return;
+    await page.waitForTimeout(100);
+  }
+  throw manual('Teileauswahl muss geprüft werden.');
 }
 
 export async function readQuote(input, credentials) {
