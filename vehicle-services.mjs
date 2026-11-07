@@ -35,8 +35,8 @@ export function componentCandidate(text,component,readPrice,scope={}){
   if(component.axle){
     const side=component.axle==='front'?'Vorderachse|vorne':'Hinterachse|hinten';
     const other=component.axle==='front'?'Hinterachse|hinten':'Vorderachse|vorne';
-    const declared=new RegExp('Einbau(?:seite|ort)\\s*:\\s*(?:'+side+')','i').test(text);
-    if(!declared&&new RegExp('Einbau(?:seite|ort)\\s*:\\s*(?:'+other+')','i').test(text))return null;
+    const declared=new RegExp('(?:Einbau(?:seite|ort)|Standort)\\s*:\\s*(?:'+side+')','i').test(text);
+    if(!declared&&new RegExp('(?:Einbau(?:seite|ort)|Standort)\\s*:\\s*(?:'+other+')','i').test(text))return null;
     if(!declared&&!(scope.confirmed===true&&scope.axle===component.axle))return null;
   }
   const quantity=Number(text.match(/benötigte Stückzahl:\s*(\d+)\b/)?.[1]);

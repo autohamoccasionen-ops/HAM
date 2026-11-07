@@ -16,6 +16,8 @@ test('brake candidates require VIN fitment, exact axle and correct axle quantity
  assert.equal(componentCandidate(noSide,c,retailPriceCents),null);
  assert.equal(componentCandidate(noSide,c,retailPriceCents,{confirmed:true,axle:'front'}).quantity,2);
  assert.equal(componentCandidate(text.replace('Vorderachse','Hinterachse'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
+ assert.equal(componentCandidate(text.replace('Einbauseite','Standort').replace('Vorderachse','Hinterachse'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
+ assert.equal(componentCandidate(text.replace('Einbauseite','Standort'),c,retailPriceCents).quantity,2);
 });
 test('manufacturer evidence is not confused with a brake system compatibility label',()=>{
  const text='Herstellereinschränkung: ATE\nKatalog-Marke: BREMBO';
