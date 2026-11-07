@@ -27,7 +27,7 @@ test('catalog image labels add only unambiguous brands and explicit VIN badges',
   assert.ok(text.includes('MAHLE'));
   assert.ok(text.includes('VIN'));
   assert.equal(normalizeCatalogText('Oelfilter', ['MAHLE', 'BOSCH', 'Keine VIN-Prüfung']), 'Ölfilter');
-  assert.equal(normalizeCatalogText('Bremsscheibe',['ATE LOGO','VIN']),'Bremsscheibe\nATE\nVIN');
+  assert.equal(normalizeCatalogText('Bremsscheibe',['ATE LOGO','VIN']),'Bremsscheibe\nATE\nKatalog-Marke: ATE\nVIN');
   assert.equal(normalizeCatalogText('Bremsscheibe',['ATE','TRW']),'Bremsscheibe');
 });
 

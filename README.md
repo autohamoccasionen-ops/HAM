@@ -9,7 +9,7 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Thirty-one automated tests cover calculations, HTTP behavior and consent
+Thirty-three automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
 
@@ -47,8 +47,8 @@ proxy; do not call this API with the secret directly from browser code.
 - Supplier page changes, login challenges and ambiguous data cause manual review;
   a past successful lookup does not guarantee future availability.
 - Motoröl-Service supports garage package prices and guarded lookups for
-  front/rear brake pads, brake discs with pads, air filters, cabin filters and
-  fuel filters. Each requires its own complete parts and labour evidence.
+  front/rear brake pads, brake discs with pads, filters, starter batteries,
+  spark plugs, belts and wipers. Each requires its own complete parts and labour evidence.
   The presence of an adapter is not proof of end-to-end supplier verification.
   Unpriced, ambiguous, unlisted or incomplete selections require manual review.
   This is not an all-services / all-VIN release.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {vehicleServices,componentCandidate,operationEvidence} from '../vehicle-services.mjs';
+import {vehicleServices,componentCandidate,operationEvidence,catalogBrand} from '../vehicle-services.mjs';
 import {retailPriceCents} from '../quote.mjs';
 test('brake candidates require VIN fitment, exact axle and correct axle quantity',()=>{
  const c=vehicleServices['Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern'].components[0];
@@ -9,6 +9,25 @@ test('brake candidates require VIN fitment, exact axle and correct axle quantity
  assert.equal(componentCandidate(text.replace('Vorderachse','Hinterachse'),c,retailPriceCents),null);
  assert.equal(componentCandidate(text.replace('Stückzahl: 2','Stückzahl: 1'),c,retailPriceCents),null);
  assert.equal(componentCandidate(text.replace('VIN',''),c,retailPriceCents),null);
+ const noSide=text.replace('Einbauseite: Vorderachse\n','');
+ assert.equal(componentCandidate(noSide,c,retailPriceCents),null);
+ assert.equal(componentCandidate(noSide,c,retailPriceCents,{confirmed:true,axle:'front'}).quantity,2);
+ assert.equal(componentCandidate(text.replace('Vorderachse','Hinterachse'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
+});
+test('manufacturer evidence is not confused with a brake system compatibility label',()=>{
+ const text='Herstellereinschränkung: ATE\nKatalog-Marke: BREMBO';
+ assert.equal(catalogBrand(text,['ATE','BREMBO']), 'BREMBO');
+ assert.equal(catalogBrand('Herstellereinschränkung: ATE',['ATE','BREMBO']), null);
+ const battery=vehicleServices['Starterbatterie ersetzen'].components[0];
+ const card='Artikel Nr.: TEST-BATTERY\nStarterbatterie\nVIN\nbenötigte Stückzahl: 1\nUVPE: 200.00 CHF 100.00 CHF exkl. MwSt.\nKatalog-Marke: VARTA';
+ assert.equal(componentCandidate(card,battery,retailPriceCents).brand,'VARTA');
+ assert.equal(componentCandidate(card.replace('Stückzahl: 1','Stückzahl: 2'),battery,retailPriceCents),null);
+});
+test('front wiper service requires evidence of a complete set',()=>{
+ const component=vehicleServices['Scheibenwischerblätter vorne wechseln'].components[0];
+ const card='Artikel Nr.: TEST-WIPER\nWischblatt\nVIN\nEinbauseite: vorne\nbenötigte Stückzahl: 1\nUVPE: 50.00 CHF 20.00 CHF exkl. MwSt.\nKatalog-Marke: BOSCH';
+ assert.equal(componentCandidate(card,component,retailPriceCents),null);
+ assert.equal(componentCandidate(card+'\nMenge: 2',component,retailPriceCents).quantity,1);
 });
 test('operation matching retains axle distinction and refuses ambiguous times',()=>{
  const names=vehicleServices['Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern'].operations;

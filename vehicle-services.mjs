@@ -1,4 +1,4 @@
-// Category and operation names are supplied by D-Store and HaynesPro.
+// Lookup candidates must match the live D-Store and HaynesPro evidence.
 // A definition is a lookup rule, never a cached part, price or labour time.
 const brake = (axle, discs) => ({
   category:'Scheibenbremse', categoryAxle:axle,
@@ -13,23 +13,42 @@ export const vehicleServices=Object.freeze({
   'Bremsbeläge Hinterachse erneuern':brake('rear',false),
   'Luftfilter-Wechsel':{category:'Luftfilter',components:[{kind:'air-filter',name:'Luftfilter',product:'\\bLuftfilter\\b'}],operations:['Luftfilter erneuern','Luftfilter wechseln']},
   'Pollenfilter-Wechsel':{category:'Innenraumfilter',components:[{kind:'cabin-filter',name:'Pollenfilter',product:'Innenraumluft|Innenraumfilter|Pollenfilter'}],operations:['Innenraumfilter erneuern','Innenraumluftfilter erneuern','Pollenfilter erneuern','Filter für Innenraumluft erneuern']},
-  'Kraftstofffilter wechseln':{category:'Kraftstofffilter',components:[{kind:'fuel-filter',name:'Kraftstofffilter',product:'Kraftstofffilter'}],operations:['Kraftstofffilter erneuern','Kraftstofffilter wechseln']}
+  'Kraftstofffilter wechseln':{category:'Kraftstofffilter',components:[{kind:'fuel-filter',name:'Kraftstofffilter',product:'Kraftstofffilter'}],operations:['Kraftstofffilter erneuern','Kraftstofffilter wechseln']},
+  'Starterbatterie ersetzen':{category:'Batterie',components:[{kind:'starter-battery',name:'Starterbatterie',product:'Starterbatterie',brands:['VARTA','EXIDE','BOSCH'],requiredQuantity:1}],operations:['Batterie erneuern']},
+  'Zündkerzen wechseln':{category:'Zündkerze',components:[{kind:'spark-plugs',name:'Zündkerzen',product:'Zündkerze',brands:['NGK','DENSO','BOSCH']}],operations:['Zündkerzen erneuern','Alle Zündkerzen erneuern','Zündkerzen erneuern (alle)'],groups:['Zündung','Zündanlage']},
+  'Keilrippenriemen-Wechsel':{category:'Keilrippenriemen',components:[{kind:'auxiliary-belt',name:'Keilrippenriemen',product:'\\bKeilrippenriemen\\b(?!-Kit)',brands:['CONTITECH','GATES','DAYCO','INA'],requiredQuantity:1}],operations:['Keilrippenriemen erneuern','Nebenaggregateriemen erneuern','Antriebsriemen erneuern'],groups:['Motor','Riementrieb','Riemenantrieb']},
+  'Zahnriemen-Wechsel':{category:'Zahnriemensatz',components:[{kind:'timing-belt-kit',name:'Zahnriemensatz',product:'Zahnriemensatz|Zahnriemen-Kit',brands:['CONTITECH','INA','GATES','DAYCO'],requiredQuantity:1,rejectText:'mit (?:Wasser|Kühlmittel)pumpe'}],operations:['Zahnriemen erneuern','Zahnriemensatz erneuern'],groups:['Motor','Riementrieb','Zahnriemen']},
+  'Scheibenwischerblätter vorne wechseln':{category:'Wischerblätter',components:[{kind:'front-wiper-set',name:'Scheibenwischerblätter vorne',product:'Wischblatt|Wischerblatt',axle:'front',brands:['BOSCH','VALEO','SWF','DENSO'],requiredQuantity:1,requireText:'Wischblattsatz|Menge:\\s*2|Länge 1[\\s\\S]{0,100}Länge 2'}],operations:['Wischerblätter erneuern (Windschutzscheibe)','Beide Wischerblätter erneuern (vorne)','Wischerblätter vorne erneuern'],groups:['Scheibenwischer','Karosserie']},
+  'Scheibenwischerblatt hinten':{category:'Wischerblätter',components:[{kind:'rear-wiper',name:'Scheibenwischerblatt hinten',product:'Wischblatt|Wischerblatt',axle:'rear',brands:['BOSCH','VALEO','SWF','DENSO'],requiredQuantity:1}],operations:['Wischerblatt erneuern (Heckscheibe)','Wischerblatt hinten erneuern'],groups:['Scheibenwischer','Karosserie']}
 });
 export const serviceComponents=names=>names.flatMap(name=>vehicleServices[name]?.components||[]);
-export function componentCandidate(text,component,readPrice){
+export function catalogBrand(text,names){
+  const markers=[...text.matchAll(/^Katalog-Marke:\s*([^\n]+)$/gm)].map(x=>x[1].trim());
+  if(markers.length===1)return names.includes(markers[0])?markers[0]:null;
+  const lines=text.split('\n').map(x=>x.trim());
+  const matches=names.filter(name=>lines.includes(name));
+  return matches.length===1?matches[0]:null;
+}
+export function componentCandidate(text,component,readPrice,scope={}){
   if(!/\bVIN\b/.test(text)||/Auf Anfrage|ABVERKAUFSARTIKEL|\d+ Stück = 1 Pack/i.test(text)||!new RegExp(component.product,'i').test(text))return null;
   if(component.axle){
     const side=component.axle==='front'?'Vorderachse|vorne':'Hinterachse|hinten';
-    if(!new RegExp('Einbau(?:seite|ort)\\s*:\\s*(?:'+side+')','i').test(text))return null;
+    const other=component.axle==='front'?'Hinterachse|hinten':'Vorderachse|vorne';
+    const declared=new RegExp('Einbau(?:seite|ort)\\s*:\\s*(?:'+side+')','i').test(text);
+    if(!declared&&new RegExp('Einbau(?:seite|ort)\\s*:\\s*(?:'+other+')','i').test(text))return null;
+    if(!declared&&!(scope.confirmed===true&&scope.axle===component.axle))return null;
   }
   const quantity=Number(text.match(/benötigte Stückzahl:\s*(\d+)\b/)?.[1]);
-  if(!Number.isInteger(quantity)||quantity<1||quantity>8)return null;
+  if(!Number.isInteger(quantity)||quantity<1||quantity>20)return null;
+  if(component.requiredQuantity&&quantity!==component.requiredQuantity)return null;
+  if(component.requireText&&!new RegExp(component.requireText,'i').test(text))return null;
+  if(component.rejectText&&new RegExp(component.rejectText,'i').test(text))return null;
   if(component.kind.endsWith('-discs')&&quantity!==2)return null;
   if(component.kind.endsWith('-pads')&&quantity!==1)return null;
   const number=text.match(/Artikel Nr\.:\s*([^\n]+?)(?:\n|$)/)?.[1]?.trim();
   if(!number||number.length>60)return null;
-  const brands=component.axle?['ATE','BREMBO','TRW','TEXTAR','BOSCH','ZIMMERMANN']:['MANN-FILTER','MAHLE','BOSCH'];
-  const brand=brands.find(x=>text.includes(x));if(!brand)return null;
+  const brands=component.brands||(component.axle?['ATE','BREMBO','TRW','TEXTAR','BOSCH','ZIMMERMANN']:['MANN-FILTER','MAHLE','BOSCH']);
+  const brand=catalogBrand(text,brands);if(!brand)return null;
   let price;try{price=readPrice(text)}catch{return null}
   return {kind:component.kind,partNumber:number,description:brand+' '+component.name,quantity,unitNetCents:price,priceBasis:'retail-ex-vat',brand};
 }

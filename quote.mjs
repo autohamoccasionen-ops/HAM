@@ -34,6 +34,8 @@ export function selectedExtraPackages(values = []) {
     || conflict(['Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern','Bremsbeläge Vorderachse erneuern'])
     || conflict(['Bremsscheiben inkl. Bremsbeläge Hinterachse erneuern','Bremsbeläge Hinterachse erneuern']))
     throw new QuoteError('INVALID_REQUEST','Bitte prüfen Sie die Kombination Ihrer Zusatzleistungen.',400);
+  if(values.includes('Zahnriemen-Wechsel')&&values.includes('Keilrippenriemen-Wechsel'))
+    throw new QuoteError('MANUAL_REVIEW_REQUIRED','Die Verbundarbeitszeit für Zahnriemen und Keilrippenriemen muss gemeinsam geprüft werden.');
   if ((values.includes('Reifen bei uns einlagern') || values.includes('Reifendruck-Gummi-Ventile erneuern') || values.includes('Reifendrucksensoren erneuern')) && !values.includes('Reifenwechsel'))
     throw new QuoteError('INVALID_REQUEST','Diese Zusatzleistung erfordert einen Reifenwechsel.',400);
   if (values.includes('Räder bei uns einlagern') && !values.includes('Räderwechsel')) throw new QuoteError('INVALID_REQUEST','Die Räder-Einlagerung erfordert einen Räderwechsel.',400);
