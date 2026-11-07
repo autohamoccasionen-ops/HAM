@@ -9,6 +9,9 @@ test('brake candidates require VIN fitment, exact axle and correct axle quantity
  assert.equal(componentCandidate(text.replace('Vorderachse','Hinterachse'),c,retailPriceCents),null);
  assert.equal(componentCandidate(text.replace('Stückzahl: 2','Stückzahl: 1'),c,retailPriceCents),null);
  assert.equal(componentCandidate(text.replace('VIN',''),c,retailPriceCents),null);
+ assert.equal(componentCandidate(text.replace('Bremsscheibe','Schraube, Bremsscheibe'),c,retailPriceCents),null);
+ const pads=vehicleServices['Bremsbeläge Vorderachse erneuern'].components[0];
+ assert.equal(componentCandidate(text.replace('Bremsscheibe','Warnkontakt, Bremsbelagverschleiß').replace('Stückzahl: 2','Stückzahl: 1'),pads,retailPriceCents),null);
  const noSide=text.replace('Einbauseite: Vorderachse\n','');
  assert.equal(componentCandidate(noSide,c,retailPriceCents),null);
  assert.equal(componentCandidate(noSide,c,retailPriceCents,{confirmed:true,axle:'front'}).quantity,2);

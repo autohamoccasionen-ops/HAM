@@ -521,7 +521,16 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       for(const brand of brands){
         const matches=[...new Map(candidates.filter(x=>x.brand===brand).map(x=>[x.partNumber,x])).values()];
         if(matches.length===1){found=matches[0];break}
-        if(matches.length>1)throw manual('Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.');
+        if(matches.length>1){
+          console.info(JSON.stringify({component:'supplier-extra-variants',kind:component.kind,variants:matches.map(match=>{
+            const source=entries.find(text=>{try{return articleNumber(text)===match.partNumber}catch{return false}})||'';
+            const lines=source.split('\n').map(x=>x.trim());
+            const technical=lines.flatMap((line,index)=>/Breite|Höhe|Dicke|Stärke|WVA|Bremssystem|Prüfzeichen|Produktreihe|Qualität|Prime|Xtra|Ceramic|Verschleiß|Zubehör/i.test(line)?[line,lines[index+1]||'']:[])
+              .filter(x=>x&&x.length<=160&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,40);
+            return {partNumber:match.partNumber,brand:match.brand,unitNetCents:match.unitNetCents,technical};
+          })}));
+          throw manual('Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.');
+        }
       }
       if(!found)throw manual('Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.');
       const {brand,...part}=found;selected.push(part);

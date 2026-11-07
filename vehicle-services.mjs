@@ -2,8 +2,8 @@
 // A definition is a lookup rule, never a cached part, price or labour time.
 const brake = (axle, discs) => ({
   category:'Scheibenbremse', categoryAxle:axle,
-  components:[...(discs?[{kind:axle+'-discs',name:'Bremsscheiben '+(axle==='front'?'Vorderachse':'Hinterachse'),product:'Bremsscheibe',axle}]:[]),
-    {kind:axle+'-pads',name:'Bremsbeläge '+(axle==='front'?'Vorderachse':'Hinterachse'),product:'Bremsbelag(?:satz)?',axle}],
+  components:[...(discs?[{kind:axle+'-discs',name:'Bremsscheiben '+(axle==='front'?'Vorderachse':'Hinterachse'),product:'(?:^|\\n)\\s*Bremsscheiben?\\b',axle}]:[]),
+    {kind:axle+'-pads',name:'Bremsbeläge '+(axle==='front'?'Vorderachse':'Hinterachse'),product:'(?:^|\\n)\\s*Bremsbel(?:agsatz|ag|äge)\\b',axle}],
   operations:[discs?`Beide Bremsscheiben erneuern (${axle==='front'?'Vorderachse':'Hinterachse'})`:`Bremsbeläge erneuern (${axle==='front'?'Vorderachse':'Hinterachse'})`]
 });
 export const vehicleServices=Object.freeze({
