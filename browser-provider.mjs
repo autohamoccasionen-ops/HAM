@@ -111,6 +111,9 @@ export async function readQuote(input, credentials) {
     await username.press('Tab');
     await password.fill(credentials.password);
     await password.press('Tab');
+    // Consent can appear after the initial form render. Resolve the visible
+    // rejection control again after entry; never force-click through overlays.
+    if (await rejectCookies.isVisible()) await rejectCookies.click();
     const loginButton = page.getByRole('button', { name: 'Einloggen', exact: true });
     console.info(JSON.stringify({ component: 'supplier-login-ready',
       usernameHasOuterWhitespace: credentials.username !== credentials.username.trim(),
@@ -190,6 +193,9 @@ export async function readQuote(input, credentials) {
           searchVisible: await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).isVisible(),
           invalidInputCount: await page.locator('input:invalid').count(),
           loginButtonEnabled: await page.getByRole('button', { name: 'Einloggen', exact: true }).isEnabled(),
+          cookieRejectVisible: await page.getByRole('button', { name: 'Ablehnen', exact: true }).isVisible(),
+          pointerIntercepted: /intercepts pointer events/.test(error?.message || ''),
+          clickTimedOut: /locator\.click: Timeout/.test(error?.message || ''),
           postResponseStatuses: loginResponses.slice(0, 10), loginRequestFailed }));
       } catch (loginError) {
         if (loginError instanceof QuoteError) { reportFailure(loginError); throw loginError; }
