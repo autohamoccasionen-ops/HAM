@@ -86,6 +86,17 @@ export async function readQuote(input, credentials) {
   const browser = await chromium.launch({ headless: true }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
   const page = await context.newPage();
+  const loginResponses = [];
+  let loginRequestFailed = false;
+  page.on('response', response => {
+    const request = response.request();
+    if (stage === 'login-submit' && request.method() === 'POST' && new URL(response.url()).origin === DSTORE) {
+      loginResponses.push(response.status());
+    }
+  });
+  page.on('requestfailed', request => {
+    if (stage === 'login-submit' && request.method() === 'POST' && new URL(request.url()).origin === DSTORE) loginRequestFailed = true;
+  });
   page.setDefaultTimeout(20000);
   context.setDefaultNavigationTimeout(30000);
   const deadline = setTimeout(() => context.close().catch(() => {}), 120000);
@@ -94,10 +105,20 @@ export async function readQuote(input, credentials) {
     await page.goto(`${DSTORE}/dch-ax/login`, { waitUntil: 'domcontentloaded' });
     const rejectCookies = page.getByRole('button', { name: 'Ablehnen', exact: true });
     if (await rejectCookies.isVisible()) await rejectCookies.click();
-    await page.locator('input[name="userName"]').fill(credentials.username);
-    await page.locator('input[type="password"]').fill(credentials.password);
+    const username = page.locator('input[name="userName"]');
+    const password = page.locator('input[type="password"]');
+    await username.fill(credentials.username);
+    await username.press('Tab');
+    await password.fill(credentials.password);
+    await password.press('Tab');
+    const loginButton = page.getByRole('button', { name: 'Einloggen', exact: true });
+    console.info(JSON.stringify({ component: 'supplier-login-ready',
+      usernameHasOuterWhitespace: credentials.username !== credentials.username.trim(),
+      passwordHasOuterWhitespace: credentials.password !== credentials.password.trim(),
+      invalidInputCount: await page.locator('input:invalid').count(),
+      loginButtonEnabled: await loginButton.isEnabled() }));
     stage = 'login-submit';
-    await page.getByRole('button', { name: 'Einloggen', exact: true }).click();
+    await loginButton.click();
     await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).waitFor({ timeout: 45000 });
     await checkLogin(page);
     stage = 'vehicle-lookup';
@@ -166,7 +187,10 @@ export async function readQuote(input, credentials) {
         await checkLogin(page);
         console.warn(JSON.stringify({ component: 'supplier-login',
           loginFormVisible: await page.locator('input[type="password"]').isVisible(),
-          searchVisible: await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).isVisible() }));
+          searchVisible: await page.getByRole('heading', { name: 'Fahrzeugsuche', exact: true }).isVisible(),
+          invalidInputCount: await page.locator('input:invalid').count(),
+          loginButtonEnabled: await page.getByRole('button', { name: 'Einloggen', exact: true }).isEnabled(),
+          postResponseStatuses: loginResponses.slice(0, 10), loginRequestFailed }));
       } catch (loginError) {
         if (loginError instanceof QuoteError) { reportFailure(loginError); throw loginError; }
       }
