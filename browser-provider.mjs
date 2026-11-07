@@ -198,6 +198,9 @@ export async function readQuote(input, credentials) {
   const consentNetworkFailures = [];
   const reportFailure = error => console.warn(JSON.stringify({ component: 'supplier-lookup', stage,
     failure: error instanceof QuoteError ? error.code : error?.name === 'TimeoutError' ? 'TIMEOUT' : 'BROWSER_ERROR',
+    interaction: /locator\.click: Timeout/.test(error?.message || '') ? 'click'
+      : /locator\.check: Timeout/.test(error?.message || '') ? 'check'
+      : /locator\.waitFor: Timeout/.test(error?.message || '') ? 'wait' : 'other',
     consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
   const browser = await chromium.launch({ headless: true }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
@@ -282,15 +285,21 @@ export async function readQuote(input, credentials) {
       if (description.includes(input.vin) && description.length <= 800) { vehicle = description; break; }
     }
     if (!vehicle) throw manual('Fahrzeugzuordnung nicht bestätigt.');
-    stage = 'material-selection';
-    await page.getByRole('tab', { name: 'Quick Click', exact: true }).click();
+    stage = 'materials-tab';
+    await page.getByText('Quick Click', { exact: true }).click();
+    stage = 'materials-filter-category';
     await clickCategory(page, 'Oelfilter');
+    stage = 'materials-drain-category';
     await clickCategory(page, 'Ablassschraube Ölwanne');
+    stage = 'materials-open-list';
     await page.getByRole('button', { name: 'Artikel anzeigen', exact: true }).click();
+    stage = 'materials-wait-list';
     await page.locator('[id^="part-detail-"]').first().waitFor();
     // A price response arrives after the product cards. Wait for a displayed
     // retail price rather than copying an incomplete loading state.
-    await page.getByText('UVPE:', { exact: true }).first().waitFor();
+    stage = 'materials-wait-retail-prices';
+    await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor();
+    stage = 'materials-select';
     const parts = await chooseMaterials(page);
     stage = 'haynes-open';
     await page.getByRole('link', { name: 'Haynes Pro', exact: true }).click();
