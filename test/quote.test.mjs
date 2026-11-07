@@ -89,6 +89,7 @@ test('vehicle-specific brake materials and labour are required and charged once'
  const quote=calculateQuote(input,source);
  assert.equal(quote.materials.length,5);assert.equal(quote.labour.hours,1.8);
  assert.equal(quote.subtotalNetCents,96576);
+ assert.equal(quote.baseOilSubtotalNetCents,53576);assert.equal(quote.serviceLines[0].netCents,43000);
  assert.throws(()=>calculateQuote(input,{...source,extraLabour:[]}),{code:'LABOUR_UNCONFIRMED'});
  assert.throws(()=>validateRequest({...input,extras:[service,'Bremsbeläge Vorderachse erneuern']}),{code:'INVALID_REQUEST'});
 });

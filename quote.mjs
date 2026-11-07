@@ -128,16 +128,24 @@ export function calculateQuote(request, source, now = new Date()) {
   if (!Number.isFinite(hours) || hours <= 0 || hours > 30 || !source.labourOperation) {
     throw new QuoteError('LABOUR_UNCONFIRMED', 'Arbeitszeit nicht bestätigt.');
   }
-  const labour = { description: 'Motoröl und Filter wechseln', operation: source.labourOperation,
+  const labour = { description: extraLabour.length?'Motoröl-Service und ausgewählte Zusatzleistungen':'Motoröl und Filter wechseln', operation: source.labourOperation,
     hours, hourlyRateNetCents: 15000, netCents: Math.round(hours * 15000) };
   const addOns = selectedExtraPackages(request.extras);
   const baseSubtotalNetCents = materialLines.reduce((sum, row) => sum + row.netCents, labour.netCents);
+  const serviceLines=vehicleExtraNames.map(name=>{
+    const kinds=vehicleServices[name].components.map(x=>x.kind);
+    const materialNetCents=materialLines.filter(x=>kinds.includes(x.kind)).reduce((sum,x)=>sum+x.netCents,0);
+    const evidence=extraLabour.find(x=>x.service===name);
+    const labourNetCents=Math.round(evidence.hours*15000);
+    return {name,hours:evidence.hours,materialNetCents,labourNetCents,netCents:materialNetCents+labourNetCents};
+  });
+  const baseOilSubtotalNetCents=baseSubtotalNetCents-serviceLines.reduce((sum,x)=>sum+x.netCents,0);
   const subtotalNetCents = addOns.reduce((sum,row)=>sum+row.netCents,baseSubtotalNetCents);
   const vatCents = Math.round(subtotalNetCents * 81 / 1000);
   const totalCents = Math.ceil((subtotalNetCents + vatCents) / 5) * 5;
   return { status: 'quoted', currency: 'CHF', vin: request.vin, mileage: request.mileage,
     service: request.service, vehicle: source.vehicle, materials: materialLines, labour,
-    baseSubtotalNetCents, addOns, extras:[...(request.extras||[])].sort(), subtotalNetCents, vatRate: 0.081, vatCents,
+    baseSubtotalNetCents,baseOilSubtotalNetCents,serviceLines, addOns, extras:[...(request.extras||[])].sort(), subtotalNetCents, vatRate: 0.081, vatCents,
     roundingCents: totalCents - subtotalNetCents - vatCents, totalCents,
     source: source.source, retrievedAt: now.toISOString() };
 }
