@@ -352,7 +352,20 @@ async function clickCategory(page, name, explicitLabel, desired = true) {
   throw manual('Teileauswahl muss geprüft werden.');
 }
 
-async function chooseRequestedMaterials(page,vehicleUrl,names){
+async function reopenVehicle(page,vehicleUrl,vin){
+  // A deep vehicle URL alone does not restore the portal's in-memory vehicle
+  // selection after a full navigation. Use its normal home-page VIN search.
+  await page.goto(`${DSTORE}/dch-ax/home`,{waitUntil:'domcontentloaded'});
+  const search=page.getByPlaceholder('VIN bzw. Chassis-Nummer',{exact:true});
+  await search.waitFor({timeout:30000});
+  await search.fill(vin);await search.press('Enter');
+  await page.getByText(vin,{exact:false}).first().waitFor({state:'visible',timeout:30000});
+  await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
+  const expected=new URL(vehicleUrl).pathname.match(/\/vehicle\/V\d+M\d+\//)?.[0];
+  if(!expected||!new URL(page.url()).pathname.includes(expected))throw manual('Fahrzeugzuordnung nicht bestätigt.');
+}
+
+async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
   const selected=[];
   let previousCategories=['Oelfilter','Ablassschraube Ölwanne'];
   const groups=[...new Map(names.map(name=>{const d=vehicleServices[name];return [d.category+':'+(d.categoryAxle||''),{category:d.category,axle:d.categoryAxle}]})).values()];
@@ -363,7 +376,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     // Reload the already observed vehicle URL in the same tab. This retains
     // normal per-tab session storage while releasing the previous Angular
     // product catalogue rather than keeping it in SPA history memory.
-    await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+    await reopenVehicle(page,vehicleUrl,vin);
     try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
     catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
     await page.getByText('Quick Click',{exact:true}).click();
@@ -453,7 +466,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     previousCategories=[category];
   }
   // Leave the completed product list before opening the labour-data tab.
-  await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+  await reopenVehicle(page,vehicleUrl,vin);
   return {selected,page};
 }
 
@@ -618,7 +631,7 @@ export async function readQuote(input, credentials) {
     await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor();
     stage = 'materials-select';
     const parts = await chooseMaterials(page);
-    if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames);parts.push(...extra.selected);page=extra.page;}
+    if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames,input.vin);parts.push(...extra.selected);page=extra.page;}
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
     await page.getByRole('link', { name: 'Haynes Pro', exact: true }).click();
