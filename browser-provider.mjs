@@ -356,12 +356,13 @@ async function reopenVehicle(page,vehicleUrl,vin){
   // A deep vehicle URL alone does not restore the portal's in-memory vehicle
   // selection after a full navigation. Use its normal home-page VIN search.
   await page.goto(`${DSTORE}/dch-ax/home`,{waitUntil:'domcontentloaded'});
+  await rejectVisibleCookieConsent(page,true);
   const expected=new URL(vehicleUrl).pathname.match(/\/vehicle\/V\d+M\d+\//)?.[0];
   const search=page.getByPlaceholder('VIN bzw. Chassis-Nummer',{exact:true});
   const change=page.getByRole('button',{name:'Fahrzeug ändern',exact:true});
   let phase='home-ready';
   try{
-    await search.or(change).first().waitFor({timeout:30000});
+    await search.or(change).filter({visible:true}).first().waitFor({timeout:30000});
     if(await change.isVisible()){
       if(expected&&new URL(page.url()).pathname.includes(expected)&&await page.getByText(vin,{exact:false}).first().isVisible())return;
       await change.click();
@@ -395,6 +396,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
     await reopenVehicle(page,vehicleUrl,vin);
     try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
     catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
+    await rejectVisibleCookieConsent(page);
     await page.getByText('Quick Click',{exact:true}).click();
     await page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true}).first().waitFor();
     // Do not accumulate products from earlier categories in the same portal
