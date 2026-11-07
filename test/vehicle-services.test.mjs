@@ -29,6 +29,12 @@ test('front wiper service requires evidence of a complete set',()=>{
  assert.equal(componentCandidate(card,component,retailPriceCents),null);
  assert.equal(componentCandidate(card+'\nMenge: 2',component,retailPriceCents).quantity,1);
 });
+test('one complete axle pad set may contain multiple pads while disc pack pricing stays guarded',()=>{
+ const c=vehicleServices['Bremsbeläge Vorderachse erneuern'].components[0];
+ const text='Artikel Nr.: TEST-PAD-SET\nBremsbelagsatz\nVIN\nbenötigte Stückzahl: 1\n4 Stück = 1 Pack\nUVPE: 120.00 CHF 80.00 CHF exkl. MwSt.\nKatalog-Marke: FERODO';
+ assert.equal(componentCandidate(text,c,retailPriceCents,{confirmed:true,axle:'front'}).quantity,1);
+ assert.equal(componentCandidate(text.replace('Bremsbelagsatz','Einzelner Bremsbelag'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
+});
 test('operation matching retains axle distinction and refuses ambiguous times',()=>{
  const names=vehicleServices['Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern'].operations;
  const text='Beide Bremsscheiben erneuern (Vorderachse) OE: 42273101 + 1,00';

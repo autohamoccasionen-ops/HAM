@@ -9,7 +9,7 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Thirty-three automated tests cover calculations, HTTP behavior and consent
+Thirty-four automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
 

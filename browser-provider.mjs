@@ -1,5 +1,5 @@
 import { QuoteError, parseOilCapacity, parseOilHours, retailPriceCents } from './quote.mjs';
-import { vehicleServices,serviceComponents,componentCandidate,operationEvidence,catalogBrand } from './vehicle-services.mjs';
+import { vehicleServices,serviceComponents,componentCandidate,operationEvidence,catalogBrand,brakeBrands } from './vehicle-services.mjs';
 
 // Read-only browser integration. No account changes, cart additions, orders,
 // offer submission, CAPTCHA solving, trace capture or cookie export.
@@ -153,7 +153,7 @@ function articleNumber(text) {
 
 export function normalizeCatalogText(text, labels = []) {
   let result = String(text).replace(/\bOelfilter\b/gi, 'Ölfilter');
-  const names = ['MAHLE', 'MANN-FILTER', 'BOSCH', 'ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS','ATE','BREMBO','TRW','TEXTAR','ZIMMERMANN','VARTA','EXIDE','NGK','DENSO','CONTITECH','GATES','DAYCO','INA','VALEO','SWF'];
+  const names = [...new Set(['MAHLE', 'MANN-FILTER', 'BOSCH', 'ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS',...brakeBrands,'VARTA','EXIDE','NGK','DENSO','CONTITECH','GATES','DAYCO','INA','VALEO','SWF'])];
   const normalized = labels.map(label => String(label || '').trim().toUpperCase());
   const brands = names.filter(name => normalized.some(label => [name, `${name} LOGO`, `LOGO ${name}`].includes(label)));
   if (brands.length === 1 && !result.includes(brands[0])) result += '\n' + brands[0];
@@ -414,8 +414,9 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       console.info(JSON.stringify({component:'supplier-extra-material-criteria',kind:component.kind,candidateCount:candidates.length,
         cards:entries.slice(0,30).map(text=>({vin:/\bVIN\b/.test(text),product:new RegExp(component.product,'i').test(text),
           front:/Einbau(?:seite|ort)\s*:\s*(?:Vorderachse|vorne)/i.test(text),rear:/Einbau(?:seite|ort)\s*:\s*(?:Hinterachse|hinten)/i.test(text),
-          quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,price:/UVPE:/.test(text)}))}));
-      const brands=component.brands||(component.axle?['ATE','BREMBO','TRW','TEXTAR','BOSCH','ZIMMERMANN']:['MANN-FILTER','MAHLE','BOSCH']);
+          quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,price:/UVPE:/.test(text),
+          brand:catalogBrand(text,brakeBrands),kit:/Bremsbelagsatz/i.test(text),packaged:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text)}))}));
+      const brands=component.brands||(component.axle?brakeBrands:['MANN-FILTER','MAHLE','BOSCH']);
       let found;
       for(const brand of brands){
         const matches=[...new Map(candidates.filter(x=>x.brand===brand).map(x=>[x.partNumber,x])).values()];
