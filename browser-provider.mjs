@@ -352,6 +352,8 @@ export async function readQuote(input, credentials) {
       : /locator\.waitFor: Timeout/.test(error?.message || '') ? 'wait' : 'other',
     controlError: /not a checkbox|not a radio/i.test(error?.message || '') ? 'UNSUPPORTED_NATIVE_CHECK'
       : /strict mode violation/i.test(error?.message || '') ? 'AMBIGUOUS_CONTROL' : null,
+    pointerIntercepted: /intercepts pointer events/.test(error?.message || ''),
+    interceptedElementCategories: interceptedElementCategory(error),
     consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
   const browser = await chromium.launch({ headless: true, timeout: 30000 }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
@@ -496,9 +498,18 @@ export async function readQuote(input, credentials) {
     }
     if (oilEntries.length !== 1) throw manual('Motorölartikel nicht eindeutig.');
     const oilCard = oilEntries[0];
+    await rejectVisibleCookieConsent(page, true);
     stage = 'oil-product-details';
     const moreDetails = oilCard.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
-    if (await moreDetails.count() === 1) await moreDetails.click();
+    if (await moreDetails.count() === 1) {
+      try { await moreDetails.click(); }
+      catch (error) {
+        if (!/intercepts pointer events/.test(error?.message || '')
+          || !interceptedElementCategory(error).includes('usercentrics')
+          || !await rejectVisibleCookieConsent(page)) throw error;
+        await moreDetails.click();
+      }
+    }
     stage = 'oil-approval-confirmation';
     await oilCard.getByText('Herstellerfreigabe: MB 229.71', { exact: true }).waitFor();
     const oilText = await readCatalogCard(oilCard);
