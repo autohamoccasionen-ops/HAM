@@ -1,4 +1,5 @@
 import { QuoteError, parseOilCapacity, parseOilHours, retailPriceCents } from './quote.mjs';
+import { vehicleServices,serviceComponents,componentCandidate,operationEvidence } from './vehicle-services.mjs';
 
 // Read-only browser integration. No account changes, cart additions, orders,
 // offer submission, CAPTCHA solving, trace capture or cookie export.
@@ -299,12 +300,12 @@ async function selectCategoryByObservedChange(page, row, label) {
   return false;
 }
 
-async function clickCategory(page, name) {
+async function clickCategory(page, name, explicitLabel) {
   const panel = page.getByRole('tabpanel', { name: 'Quick Click', exact: true });
   const scope = await panel.count() === 1 ? panel : page;
   // The same name also appears in the navigation tree. Its DIV is not the
   // Quick Click checkbox label, which is rendered inside p-checkbox.
-  let label = scope.locator('p-checkbox').getByText(name, { exact: true }).filter({ visible: true });
+  let label = explicitLabel || scope.locator('p-checkbox').getByText(name, { exact: true }).filter({ visible: true });
   if (await label.count() !== 1) label = scope.getByText(name, { exact: true }).filter({ visible: true });
   if (await label.count() !== 1) throw manual('Teilekategorie nicht eindeutig.');
   const row = label.locator('..');
@@ -347,6 +348,50 @@ async function clickCategory(page, name) {
     }
   }
   throw manual('Teileauswahl muss geprüft werden.');
+}
+
+async function chooseRequestedMaterials(page,vehicleUrl,names){
+  const selected=[];
+  const categories=[...new Set(names.map(name=>vehicleServices[name].category))];
+  for(const category of categories){
+    await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
+    await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
+    await page.getByText('Quick Click',{exact:true}).click();
+    const definition=vehicleServices[names.find(name=>vehicleServices[name].category===category)];
+    if(definition.allCategories){
+      const labels=page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true});
+      if(await labels.count()!==2)throw manual('Bremsen-Kategorien müssen eindeutig zugeordnet werden.');
+      for(const label of await labels.all())await clickCategory(page,category,label);
+    }else await clickCategory(page,category);
+    await page.getByRole('button',{name:'Artikel anzeigen',exact:true}).click();
+    await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor();
+    const components=serviceComponents(names.filter(name=>vehicleServices[name].category===category));
+    const entries=[];
+    for(const card of await page.locator('[id^="part-detail-"]').all()){
+      if(!await card.isVisible())continue;
+      const article=await completeArticleContainer(card);
+      let text=await readCatalogCard(article);
+      if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
+      if(!components.some(c=>componentCandidate(text,c,retailPriceCents))){
+        const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
+        if(await details.count()===1){await details.click();await article.getByText(/Einbauseite|benötigte Stückzahl/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article)}
+      }
+      entries.push(text);
+    }
+    for(const component of components){
+      const candidates=entries.map(text=>componentCandidate(text,component,retailPriceCents)).filter(Boolean);
+      const brands=component.axle?['ATE','BREMBO','TRW','TEXTAR','BOSCH','ZIMMERMANN']:['MANN-FILTER','MAHLE','BOSCH'];
+      let found;
+      for(const brand of brands){
+        const matches=[...new Map(candidates.filter(x=>x.brand===brand).map(x=>[x.partNumber,x])).values()];
+        if(matches.length===1){found=matches[0];break}
+        if(matches.length>1)throw manual('Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.');
+      }
+      if(!found)throw manual('Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.');
+      const {brand,...part}=found;selected.push(part);
+    }
+  }
+  return selected;
 }
 
 export async function readQuote(input, credentials) {
@@ -394,7 +439,7 @@ export async function readQuote(input, credentials) {
   });
   page.setDefaultTimeout(20000);
   context.setDefaultNavigationTimeout(30000);
-  const deadline = setTimeout(() => context.close().catch(() => {}), 240000);
+  const deadline = setTimeout(() => context.close().catch(() => {}), 420000);
   try {
     stage = 'login-page';
     await page.goto(`${DSTORE}/dch-ax/login`, { waitUntil: 'domcontentloaded' });
@@ -453,6 +498,8 @@ export async function readQuote(input, credentials) {
       if (description.includes(input.vin) && description.length <= 800) { vehicle = description; break; }
     }
     if (!vehicle) throw manual('Fahrzeugzuordnung nicht bestätigt.');
+    const vehicleUrl=page.url();
+    const vehicleExtraNames=(input.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'vehicle-confirmed' }));
     stage = 'materials-tab';
     await page.getByText('Quick Click', { exact: true }).click();
@@ -472,6 +519,7 @@ export async function readQuote(input, credentials) {
     await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor();
     stage = 'materials-select';
     const parts = await chooseMaterials(page);
+    if(vehicleExtraNames.length){stage='additional-materials';parts.push(...await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames));}
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
     await page.getByRole('link', { name: 'Haynes Pro', exact: true }).click();
@@ -491,6 +539,17 @@ export async function readQuote(input, credentials) {
     const labourHours = parseOilHours(labourText);
     const operation = labourText.match(/Motoröl und Filter wechseln\s*OE\s*:\s*([\w-]+)/)?.[1];
     if (!operation) throw manual('Arbeitsposition konnte nicht eindeutig gelesen werden.');
+    const extraLabour=[];
+    let expandedLabourText=labourText;
+    for(const name of vehicleExtraNames){
+      let evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
+      if(!evidence&&/filter/i.test(vehicleServices[name].category)){
+        const filter=haynes.getByText('Filter',{exact:true}).filter({visible:true});
+        if(await filter.count()===1){await filter.click();expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);}
+      }
+      if(!evidence)throw manual('Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.');
+      extraLabour.push({service:name,...evidence});
+    }
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'labour-confirmed' }));
     stage = 'oil-specification';
     await haynes.getByRole('link', { name: '<Zurück zu Übersicht', exact: true }).click();
@@ -541,7 +600,7 @@ export async function readQuote(input, credentials) {
     const oilText = await readCatalogCard(oilCard);
     stage = 'oil-package-confirmation';
     if (!oilPackageConfirmed(oilText)) throw manual('Ölgebinde muss geprüft werden.');
-    return { vin: input.vin, vehicle, source: 'D-Store / HaynesPro', labourHours, labourOperation: operation,
+    return { vin: input.vin, vehicle, source: 'D-Store / HaynesPro', labourHours, labourOperation: operation,extraLabour,
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {

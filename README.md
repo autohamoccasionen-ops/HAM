@@ -9,7 +9,7 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Twenty-eight automated tests cover calculations, HTTP behavior and consent
+Thirty-one automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
 
@@ -46,9 +46,12 @@ proxy; do not call this API with the secret directly from browser code.
 
 - Supplier page changes, login challenges and ambiguous data cause manual review;
   a past successful lookup does not guarantee future availability.
-- Motoröl-Service supports the existing garage package prices for selected
-  additional services. Vehicle-specific replacement parts and unlisted options
-  still require manual review. This is not an all-services / all-VIN release.
+- Motoröl-Service supports garage package prices and guarded lookups for
+  front/rear brake pads, brake discs with pads, air filters, cabin filters and
+  fuel filters. Each requires its own complete parts and labour evidence.
+  The presence of an adapter is not proof of end-to-end supplier verification.
+  Unpriced, ambiguous, unlisted or incomplete selections require manual review.
+  This is not an all-services / all-VIN release.
 - Package amounts include their labour. They are itemized once, with VAT and
   cash rounding applied only after the complete net subtotal is calculated.
 - Conflicting selections and dependent options without their required service
@@ -61,7 +64,7 @@ proxy; do not call this API with the secret directly from browser code.
   Packaging multiples and unpriced items are rejected.
 - Each lookup starts a new, in-memory browser context. No session files,
   screenshots, traces, invoices, customer records or parts orders are saved.
-- One lookup at a time; busy requests return 429. A 240-second lookup deadline
+- One lookup at a time; busy requests return 429. A 420-second lookup deadline
   closes the context. No CAPTCHA solving, fingerprint changes or proxy routing.
 - Do not automatically retry VIN lookups or place anything in the parts cart.
 

@@ -1,3 +1,4 @@
+import { vehicleServices,serviceComponents } from './vehicle-services.mjs';
 export class QuoteError extends Error {
   constructor(code, message, status = 422) {
     super(message);
@@ -22,20 +23,22 @@ export const extraPackages = Object.freeze({
 });
 
 export function selectedExtraPackages(values = []) {
-  if (!Array.isArray(values) || values.length > 30 || values.some(x => typeof x !== 'string' || !Object.hasOwn(extraPackages,x)))
+  if (!Array.isArray(values) || values.length > 30 || values.some(x => typeof x !== 'string' || (!Object.hasOwn(extraPackages,x)&&!Object.hasOwn(vehicleServices,x))))
     throw new QuoteError('MANUAL_REVIEW_REQUIRED', 'Für mindestens eine gewählte Zusatzleistung müssen Material und Arbeitszeit noch individuell geprüft werden.');
   if (new Set(values).size !== values.length) throw new QuoteError('INVALID_REQUEST','Eine Zusatzleistung wurde mehrfach übermittelt.',400);
   const conflict = names => names.filter(x => values.includes(x)).length > 1;
   if (conflict(['Reifenwechsel','Räderwechsel','Räder auswuchten'])
     || conflict(['Aussenreinigung ohne Politur','Aussenreinigung mit Politur'])
     || conflict(['Reifendrucksensoren erneuern','Reifendruck-Gummi-Ventile erneuern'])
-    || conflict(['Kraftstoffadditiv Benzin','Kraftstoffadditiv Diesel']))
+    || conflict(['Kraftstoffadditiv Benzin','Kraftstoffadditiv Diesel'])
+    || conflict(['Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern','Bremsbeläge Vorderachse erneuern'])
+    || conflict(['Bremsscheiben inkl. Bremsbeläge Hinterachse erneuern','Bremsbeläge Hinterachse erneuern']))
     throw new QuoteError('INVALID_REQUEST','Bitte prüfen Sie die Kombination Ihrer Zusatzleistungen.',400);
   if ((values.includes('Reifen bei uns einlagern') || values.includes('Reifendruck-Gummi-Ventile erneuern') || values.includes('Reifendrucksensoren erneuern')) && !values.includes('Reifenwechsel'))
     throw new QuoteError('INVALID_REQUEST','Diese Zusatzleistung erfordert einen Reifenwechsel.',400);
   if (values.includes('Räder bei uns einlagern') && !values.includes('Räderwechsel')) throw new QuoteError('INVALID_REQUEST','Die Räder-Einlagerung erfordert einen Räderwechsel.',400);
   if (values.includes('Räder reinigen') && !values.includes('Räder bei uns einlagern')) throw new QuoteError('INVALID_REQUEST','Die Räderreinigung erfordert die gewählte Einlagerung.',400);
-  return [...values].sort().map(name => ({name,netCents:name==='Reifendrucksensoren erneuern'&&values.includes('Reifenwechsel')?28000:extraPackages[name],priceBasis:'garage-package'}));
+  return [...values].sort().filter(name=>Object.hasOwn(extraPackages,name)).map(name => ({name,netCents:name==='Reifendrucksensoren erneuern'&&values.includes('Reifenwechsel')?28000:extraPackages[name],priceBasis:'garage-package'}));
 }
 
 export function validateRequest(input) {
@@ -52,7 +55,8 @@ export function validateRequest(input) {
   if (input.service !== 'oel-service') {
     throw new QuoteError('MANUAL_REVIEW_REQUIRED', 'Diese Auswahl wird individuell durch die Garage kalkuliert.');
   }
-  const extras=selectedExtraPackages(input.extras ?? []).map(x=>x.name);
+  selectedExtraPackages(input.extras ?? []);
+  const extras=[...(input.extras??[])].sort();
   return { vin, mileage: input.mileage, service: 'oel-service', extras };
 }
 
@@ -97,9 +101,11 @@ export function calculateQuote(request, source, now = new Date()) {
   if (source.vin !== request.vin || !source.vehicle || source.source !== 'D-Store / HaynesPro') {
     throw new QuoteError('VEHICLE_UNCONFIRMED', 'Fahrzeugzuordnung nicht bestätigt.');
   }
-  if (!Array.isArray(source.materials) || source.materials.length !== 3 ||
-      new Set(source.materials.map(row => row.kind)).size !== 3 ||
-      !['oil', 'filter', 'drain-plug'].every(kind => source.materials.some(row => row.kind === kind))) {
+  const vehicleExtraNames=(request.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
+  const requiredKinds=['oil','filter','drain-plug',...serviceComponents(vehicleExtraNames).map(x=>x.kind)];
+  if (!Array.isArray(source.materials) || source.materials.length !== requiredKinds.length ||
+      new Set(source.materials.map(row => row.kind)).size !== requiredKinds.length ||
+      !requiredKinds.every(kind => source.materials.some(row => row.kind === kind))) {
     throw new QuoteError('MATERIAL_UNCONFIRMED', 'Materialauswahl unvollständig.');
   }
   const materialLines = source.materials.map(row => {
@@ -111,8 +117,15 @@ export function calculateQuote(request, source, now = new Date()) {
       unit: row.kind === 'oil' ? 'l' : 'Stück', unitNetCents: row.unitNetCents,
       netCents: Math.round(row.unitNetCents * row.quantity) };
   });
-  const hours = source.labourHours;
-  if (!Number.isFinite(hours) || hours <= 0 || hours > 3 || !source.labourOperation) {
+  const extraLabour=source.extraLabour||[];
+  if(extraLabour.length!==vehicleExtraNames.length||new Set(extraLabour.map(x=>x.service)).size!==vehicleExtraNames.length
+    || !vehicleExtraNames.every(name=>extraLabour.some(x=>x.service===name&&x.operation&&Number.isFinite(x.hours)&&x.hours>0&&x.hours<=12))
+    || new Set([source.labourOperation,...extraLabour.map(x=>x.operation)]).size!==1+extraLabour.length)
+    throw new QuoteError('LABOUR_UNCONFIRMED','Arbeitspositionen müssen eindeutig und ohne Überschneidung bestätigt werden.');
+  if(!Number.isFinite(source.labourHours)||source.labourHours<=0||source.labourHours>3)
+    throw new QuoteError('LABOUR_UNCONFIRMED','Arbeitszeit für den Motoröl-Service nicht bestätigt.');
+  const hours = source.labourHours+extraLabour.reduce((sum,x)=>sum+x.hours,0);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 30 || !source.labourOperation) {
     throw new QuoteError('LABOUR_UNCONFIRMED', 'Arbeitszeit nicht bestätigt.');
   }
   const labour = { description: 'Motoröl und Filter wechseln', operation: source.labourOperation,
@@ -124,7 +137,7 @@ export function calculateQuote(request, source, now = new Date()) {
   const totalCents = Math.ceil((subtotalNetCents + vatCents) / 5) * 5;
   return { status: 'quoted', currency: 'CHF', vin: request.vin, mileage: request.mileage,
     service: request.service, vehicle: source.vehicle, materials: materialLines, labour,
-    baseSubtotalNetCents, addOns, extras:addOns.map(x=>x.name), subtotalNetCents, vatRate: 0.081, vatCents,
+    baseSubtotalNetCents, addOns, extras:[...(request.extras||[])].sort(), subtotalNetCents, vatRate: 0.081, vatCents,
     roundingCents: totalCents - subtotalNetCents - vatCents, totalCents,
     source: source.source, retrievedAt: now.toISOString() };
 }

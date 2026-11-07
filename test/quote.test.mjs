@@ -74,7 +74,21 @@ test('selected packages are itemized once and VAT is calculated on the complete 
 test('conflicts and unsupported parts never receive a made-up package price',()=>{
  for(const extras of [['Reifenwechsel','Räderwechsel'],['Aussenreinigung ohne Politur','Aussenreinigung mit Politur'],['Bremsflüssigkeit wechseln','Bremsflüssigkeit wechseln'],['Reifendrucksensoren erneuern'],['Räder reinigen']])
   assert.throws(()=>validateRequest({...request,extras}),{code:'INVALID_REQUEST'});
- assert.throws(()=>validateRequest({...request,extras:['Bremsbeläge Vorderachse erneuern']}),{code:'MANUAL_REVIEW_REQUIRED'});
+ assert.throws(()=>calculateQuote(validateRequest({...request,extras:['Bremsbeläge Vorderachse erneuern']}),verified),{code:'MATERIAL_UNCONFIRMED'});
  const result=calculateQuote(validateRequest({...request,extras:['Reifenwechsel','Reifendrucksensoren erneuern']}),verified);
  assert.equal(result.addOns.find(x=>x.name==='Reifendrucksensoren erneuern').netCents,28000);
+});
+
+test('vehicle-specific brake materials and labour are required and charged once',()=>{
+ const service='Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern';
+ const input=validateRequest({...request,extras:[service]});
+ const source={...verified,materials:[...verified.materials,
+  {kind:'front-discs',partNumber:'TEST-DISC',description:'Test disc',quantity:2,unitNetCents:10000,priceBasis:'retail-ex-vat'},
+  {kind:'front-pads',partNumber:'TEST-PADS',description:'Test pad set',quantity:1,unitNetCents:8000,priceBasis:'retail-ex-vat'}],
+  extraLabour:[{service,operation:'test-disc-operation',hours:1}]};
+ const quote=calculateQuote(input,source);
+ assert.equal(quote.materials.length,5);assert.equal(quote.labour.hours,1.8);
+ assert.equal(quote.subtotalNetCents,96576);
+ assert.throws(()=>calculateQuote(input,{...source,extraLabour:[]}),{code:'LABOUR_UNCONFIRMED'});
+ assert.throws(()=>validateRequest({...input,extras:[service,'Bremsbeläge Vorderachse erneuern']}),{code:'INVALID_REQUEST'});
 });
