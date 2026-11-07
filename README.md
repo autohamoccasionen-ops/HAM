@@ -9,7 +9,7 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Twenty-four automated tests cover calculations, HTTP behavior and consent
+Twenty-six automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
 
@@ -31,8 +31,13 @@ proxy; do not call this API with the secret directly from browser code.
 
 - `GET /healthz`: public HTTP health, no vendor request or configuration values.
 - `GET /api/status`: bearer-protected configuration and enablement status.
-- `POST /api/quotes`: bearer-protected JSON: `vin` (17 characters), `mileage`
+- `POST /api/quotes`: synchronous bearer-protected JSON: `vin` (17 characters), `mileage`
   (integer), `service` (`oel-service`) and `extras` (empty array for now).
+- `POST /api/quote-jobs`: same input; immediately returns a pending job identifier.
+- `GET /api/quote-jobs/{jobId}`: bearer-protected polling; returns 202 while
+  pending, then the complete quotation or manual review. Jobs are in memory,
+  expire after ten minutes and are lost on restart. No customer records are
+  written to disk. Use short polling requests for website integration.
 - Quote results include itemized materials, list prices excluding VAT, labour
   at CHF 150/h, VAT 8.1% and a total rounded upward to CHF 0.05.
 - Failures return `status: manual-review` with an error code and no invented price.

@@ -46,7 +46,30 @@ export function createApp({ env = process.env, provider, audit = () => {} } = {}
   let active = false;
   let lastError = null;
   let lastSuccessfulQuoteAt = null;
+  const jobs = new Map();
+  const pruneJobs = () => { for (const [id, job] of jobs) if (Date.now() - job.createdAt > 600000) jobs.delete(id); };
   const credentialsConfigured = () => !!(env.DSTORE_USERNAME && env.DSTORE_PASSWORD && env.QUOTE_SERVICE_TOKEN?.length >= 32);
+  const failure = (error, requestId) => {
+    const known = error instanceof QuoteError;
+    const code = known ? error.code : 'SOURCE_UNAVAILABLE';
+    lastError = code;
+    audit({ requestId, outcome: code });
+    return { status: known ? error.status : 503, body: { status: 'manual-review', code,
+      message: publicMessages[code] || (known ? error.message : publicMessages.SOURCE_UNAVAILABLE), requestId } };
+  };
+  async function execute(input, requestId) {
+    const start = Date.now();
+    try {
+      const readQuote = provider || (await import('./browser-provider.mjs')).readQuote;
+      const result = await readQuote(input, { username: env.DSTORE_USERNAME, password: env.DSTORE_PASSWORD });
+      const quote = calculateQuote(input, result);
+      lastError = null;
+      lastSuccessfulQuoteAt = new Date().toISOString();
+      audit({ requestId, outcome: 'quoted', elapsedMs: Date.now() - start });
+      return { status: 200, body: { ...quote, requestId } };
+    } catch (error) { return failure(error, requestId); }
+    finally { active = false; }
+  }
   return async function handle(req, res) {
     const path = new URL(req.url, 'http://localhost').pathname;
     if (req.method === 'GET' && (path === '/' || path === '/healthz')) {
@@ -60,32 +83,36 @@ export function createApp({ env = process.env, provider, audit = () => {} } = {}
         busy: active, lastError, liveConnectionVerified: !!lastSuccessfulQuoteAt, lastSuccessfulQuoteAt,
         supportedServices: ['oel-service'] });
     }
-    if (req.method !== 'POST' || path !== '/api/quotes') return send(res, 404, { error: 'NOT_FOUND' });
+    if (req.method === 'GET' && /^\/api\/quote-jobs\/[a-f0-9-]{36}$/.test(path)) {
+      pruneJobs();
+      const jobId = path.split('/').pop();
+      const job = jobs.get(jobId);
+      if (!job) return send(res, 404, { status: 'manual-review', code: 'JOB_NOT_FOUND' });
+      if (!job.result) return send(res, 202, { status: 'pending', jobId });
+      return send(res, job.result.status, job.result.body);
+    }
+    if (req.method !== 'POST' || !['/api/quotes', '/api/quote-jobs'].includes(path)) return send(res, 404, { error: 'NOT_FOUND' });
     const requestId = randomUUID();
-    let acquired = false;
     try {
       const input = validateRequest(await readBody(req));
       if (!credentialsConfigured()) throw new QuoteError('SERVICE_NOT_CONFIGURED', '', 503);
       if (env.QUOTE_AUTOMATION_ENABLED !== 'true') throw new QuoteError('AUTOMATION_NOT_ENABLED', '', 503);
       if (active) throw new QuoteError('BUSY', '', 429);
+      pruneJobs();
+      if (path === '/api/quote-jobs' && jobs.size >= 20) throw new QuoteError('BUSY', '', 429);
       active = true;
-      acquired = true;
-      const start = Date.now();
-      const readQuote = provider || (await import('./browser-provider.mjs')).readQuote;
-      const result = await readQuote(input, { username: env.DSTORE_USERNAME, password: env.DSTORE_PASSWORD });
-      const quote = calculateQuote(input, result);
-      lastError = null;
-      lastSuccessfulQuoteAt = new Date().toISOString();
-      audit({ requestId, outcome: 'quoted', elapsedMs: Date.now() - start });
-      return send(res, 200, { ...quote, requestId });
+      if (path === '/api/quote-jobs') {
+        const job = { createdAt: Date.now(), result: null };
+        jobs.set(requestId, job);
+        void execute(input, requestId).then(result => { job.result = result; });
+        return send(res, 202, { status: 'pending', jobId: requestId });
+      }
+      const result = await execute(input, requestId);
+      return send(res, result.status, result.body);
     } catch (error) {
-      const known = error instanceof QuoteError;
-      const code = known ? error.code : 'SOURCE_UNAVAILABLE';
-      lastError = code;
-      audit({ requestId, outcome: code });
-      return send(res, known ? error.status : 503, { status: 'manual-review', code,
-        message: publicMessages[code] || (known ? error.message : publicMessages.SOURCE_UNAVAILABLE), requestId });
-    } finally { if (acquired) active = false; }
+      const result = failure(error, requestId);
+      return send(res, result.status, result.body);
+    }
   };
 }
 

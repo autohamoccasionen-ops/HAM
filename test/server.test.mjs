@@ -117,3 +117,44 @@ test('VIN parts cannot be substituted with universal or multi-pack products', ()
   assert.equal(materialCandidate(card.replace('Stückzahl: 1', 'Stückzahl: 5'), 'drain-plug'), null);
   assert.equal(materialCandidate(card.replace('mit Dichtring', 'ohne Dichtring'), 'drain-plug'), null);
 });
+
+test('background quotation returns promptly, protects polling and preserves the complete result', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let finished;
+  const done = new Promise(resolve => { finished = resolve; });
+  await withServer({ env, provider: async () => { await gate; return source; }, audit: event => {
+    if (event.outcome === 'quoted') finished();
+  } }, async base => {
+    const start = await fetch(base + '/api/quote-jobs', { method: 'POST', headers, body: JSON.stringify(input) });
+    assert.equal(start.status, 202);
+    const pending = await start.json();
+    assert.equal(pending.status, 'pending');
+    assert.equal(pending.vin, undefined);
+    const path = '/api/quote-jobs/' + pending.jobId;
+    assert.equal((await fetch(base + path)).status, 401);
+    assert.equal((await fetch(base + path, { headers })).status, 202);
+    assert.equal((await fetch(base + '/api/quote-jobs', { method: 'POST', headers, body: JSON.stringify(input) })).status, 429);
+    release(); await done;
+    const ready = await fetch(base + path, { headers });
+    assert.equal(ready.status, 200);
+    const quote = await ready.json();
+    assert.equal(quote.vin, input.vin);
+    assert.equal(quote.totalCents, 57920);
+    assert.equal((await fetch(base + '/api/quote-jobs/00000000-0000-4000-8000-000000000000', { headers })).status, 404);
+  });
+});
+
+test('failed background lookup returns manual review without a price or private diagnostics', async () => {
+  let finished;
+  const done = new Promise(resolve => { finished = resolve; });
+  await withServer({ env, provider: async () => { throw Error('private-upstream-value'); }, audit: () => finished() }, async base => {
+    const start = await fetch(base + '/api/quote-jobs', { method: 'POST', headers, body: JSON.stringify(input) });
+    const { jobId } = await start.json(); await done;
+    const result = await fetch(base + '/api/quote-jobs/' + jobId, { headers });
+    assert.equal(result.status, 503);
+    const text = await result.text();
+    assert.ok(!text.includes('private-upstream-value'));
+    assert.equal(JSON.parse(text).totalCents, undefined);
+  });
+});
