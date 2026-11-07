@@ -228,11 +228,13 @@ async function selectCategoryByObservedChange(page, row, label) {
 }
 
 async function clickCategory(page, name) {
-  const label = page.getByText(name, { exact: true });
+  const panel = page.getByRole('tabpanel', { name: 'Quick Click', exact: true });
+  const scope = await panel.count() === 1 ? panel : page;
+  const label = scope.getByText(name, { exact: true }).filter({ visible: true });
   if (await label.count() !== 1) throw manual('Teilekategorie nicht eindeutig.');
   const row = label.locator('..');
-  let matches = page.getByRole('checkbox', { name, exact: true });
-  if (await matches.count() !== 1) matches = page.getByLabel(name, { exact: true });
+  let matches = scope.getByRole('checkbox', { name, exact: true });
+  if (await matches.count() !== 1) matches = scope.getByLabel(name, { exact: true });
   if (await matches.count() !== 1) {
     // Some category layouts put two controls in the same row. Resolve the
     // native label association instead of choosing the first checkbox.
@@ -278,6 +280,10 @@ export async function readQuote(input, credentials) {
   const consentNetworkFailures = [];
   const reportFailure = error => console.warn(JSON.stringify({ component: 'supplier-lookup', stage,
     failure: error instanceof QuoteError ? error.code : error?.name === 'TimeoutError' ? 'TIMEOUT' : 'BROWSER_ERROR',
+    reviewReason: { 'Teilekategorie nicht eindeutig.': 'CATEGORY_LABEL_AMBIGUOUS',
+      'Teileauswahl muss geprüft werden.': 'CATEGORY_CONTROL_UNCONFIRMED',
+      'Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.': 'MATERIALS_UNCONFIRMED',
+      'Artikelnummer nicht eindeutig gelesen.': 'PART_NUMBER_UNCONFIRMED' }[error?.message] || null,
     interaction: /locator\.click: Timeout/.test(error?.message || '') ? 'click'
       : /locator\.check: Timeout/.test(error?.message || '') ? 'check'
       : /locator\.waitFor: Timeout/.test(error?.message || '') ? 'wait' : 'other',
@@ -433,13 +439,14 @@ export async function readQuote(input, credentials) {
           hasNativeInput: !!node.querySelector('input[type="checkbox"]'), parentTag: node.parentElement?.tagName,
           parentClass: String(node.parentElement?.className || '').slice(0, 120) }))).catch(() => []);
       console.warn(JSON.stringify({ component: 'supplier-category-controls', stage, controls }));
-      const labelShape = await page.getByText(categoryName, { exact: true }).evaluate(node => ({
+      const labelShape = await page.getByText(categoryName, { exact: true }).evaluateAll(nodes => nodes.map(node => ({
         tag: node.tagName, hasFor: !!node.getAttribute('for'), parentTag: node.parentElement?.tagName,
+        visible: !!(node.getBoundingClientRect().width && node.getBoundingClientRect().height),
         parentClass: String(node.parentElement?.className || '').slice(0, 120),
         children: Array.from(node.parentElement?.children || []).map(child => ({ tag: child.tagName,
           className: String(child.className || '').slice(0, 100), containsLabel: child.contains(node),
           checkboxCount: child.querySelectorAll('input[type="checkbox"]').length }))
-      })).catch(() => null);
+      }))).catch(() => null);
       console.warn(JSON.stringify({ component: 'supplier-category-label', stage, labelShape }));
     }
     if (stage === 'consent') console.warn(JSON.stringify({ component: 'supplier-consent-controls',
