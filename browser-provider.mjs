@@ -362,6 +362,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
     catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
     await page.getByText('Quick Click',{exact:true}).click();
+    await page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true}).first().waitFor();
     // Do not accumulate products from earlier categories in the same portal
     // session. Change normal checkbox controls and verify their actual state.
     for(const control of await page.locator('p-checkbox').all()){
@@ -374,6 +375,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const definition=vehicleServices[names.find(name=>vehicleServices[name].category===category)];
     if(definition.categoryAxle){
       const labels=page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true});
+      console.info(JSON.stringify({component:'supplier-extra-category-count',category,count:await labels.count()}));
       if(await labels.count()!==2)throw manual('Bremsen-Kategorien müssen eindeutig zugeordnet werden.');
       const requestedAxles=[...new Set(names.filter(name=>vehicleServices[name].category===category).map(name=>vehicleServices[name].categoryAxle))];
       const shapes=await labels.evaluateAll(nodes=>nodes.map(n=>{
@@ -437,6 +439,11 @@ export async function readQuote(input, credentials) {
       'Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.': 'MATERIALS_UNCONFIRMED',
       'Artikelnummer nicht eindeutig gelesen.': 'PART_NUMBER_UNCONFIRMED',
       'Motorölartikel nicht eindeutig.': 'OIL_PRODUCT_UNCONFIRMED',
+      'Vorherige Teileauswahl konnte nicht eindeutig zurückgesetzt werden.':'EXTRA_RESET_AMBIGUOUS',
+      'Bremsen-Kategorien müssen eindeutig zugeordnet werden.':'BRAKE_CATEGORY_AMBIGUOUS',
+      'Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.':'EXTRA_PART_VARIANTS',
+      'Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.':'EXTRA_PART_EVIDENCE_MISSING',
+      'Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.':'EXTRA_LABOUR_UNCONFIRMED',
       'Ölgebinde muss geprüft werden.': 'OIL_PACKAGE_UNCONFIRMED' }[error?.message] || null,
     interaction: /locator\.click: Timeout/.test(error?.message || '') ? 'click'
       : /locator\.check: Timeout/.test(error?.message || '') ? 'check'
