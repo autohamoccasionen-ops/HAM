@@ -45,6 +45,21 @@ function interceptedElementCategory(error) {
   return categories.filter(category => entries.some(line => line.toLowerCase().includes(category)));
 }
 
+async function publicConsentControls(page, credentials) {
+  const results = [];
+  for (const frame of page.frames()) {
+    // Only public CMP control labels, never auth fields or whole-page text.
+    const hosts = frame.locator('[id*="usercentrics"]').filter({ visible: true });
+    for (const host of await hosts.all()) {
+      const labels = await host.getByRole('button').allTextContents();
+      results.push(...labels.map(clean).filter(label => label && label.length <= 80
+        && !label.includes(credentials.username) && !label.includes(credentials.password)
+        && !/@|https?:/i.test(label)));
+    }
+  }
+  return [...new Set(results)].slice(0, 15);
+}
+
 async function checkLogin(page) {
   const text = await page.locator('body').innerText();
   if (invalidLogin.test(text)) {
@@ -242,6 +257,7 @@ export async function readQuote(input, credentials) {
           cookieRejectVisible: await page.getByRole('button', { name: 'Ablehnen', exact: true }).isVisible(),
           pointerIntercepted: /intercepts pointer events/.test(error?.message || ''),
           interceptedElementCategories: interceptedElementCategory(error),
+          publicConsentButtonLabels: await publicConsentControls(page, credentials),
           iframeCount: page.frames().length - 1,
           clickTimedOut: /locator\.click: Timeout/.test(error?.message || ''),
           postResponseStatuses: loginResponses.slice(0, 10), loginRequestFailed }));
