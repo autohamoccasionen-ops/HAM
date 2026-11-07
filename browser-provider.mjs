@@ -362,37 +362,7 @@ async function clickCategory(page, name, explicitLabel, desired = true) {
   throw manual('Teileauswahl muss geprüft werden.');
 }
 
-async function reopenVehicle(page,vehicleUrl,vin){
-  // A deep vehicle URL alone does not restore the portal's in-memory vehicle
-  // selection after a full navigation. Use its normal home-page VIN search.
-  await page.goto(`${DSTORE}/dch-ax/home`,{waitUntil:'domcontentloaded'});
-  await rejectVisibleCookieConsent(page,true);
-  const expected=new URL(vehicleUrl).pathname.match(/\/vehicle\/V\d+M\d+\//)?.[0];
-  const search=page.getByPlaceholder('VIN bzw. Chassis-Nummer',{exact:true});
-  const change=page.getByRole('button',{name:'Fahrzeug ändern',exact:true});
-  let phase='home-ready';
-  try{
-    await search.or(change).filter({visible:true}).first().waitFor({timeout:30000});
-    if(await change.isVisible()){
-      if(expected&&new URL(page.url()).pathname.includes(expected)&&await page.getByText(vin,{exact:false}).first().isVisible())return;
-      await clickWithCookieConsent(page,change);
-    }
-    phase='vin-search';await search.waitFor({timeout:10000});
-    await search.fill(vin);await search.press('Enter');
-    phase='vin-confirmation';
-    await page.getByText(vin,{exact:false}).first().waitFor({state:'visible',timeout:30000});
-    await change.waitFor();
-    if(!expected||!new URL(page.url()).pathname.includes(expected))throw manual('Fahrzeugzuordnung nicht bestätigt.');
-  }catch(error){
-    console.warn(JSON.stringify({component:'supplier-vehicle-reopen',phase,
-      vinSearchVisible:await search.isVisible().catch(()=>false),changeVisible:await change.isVisible().catch(()=>false),
-      loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),
-      expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));
-    throw error;
-  }
-}
-
-async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
+async function chooseRequestedMaterials(page,vehicleUrl,names){
   const selected=[];
   let previousCategories=['Oelfilter','Ablassschraube Ölwanne'];
   const groups=[...new Map(names.map(name=>{const d=vehicleServices[name];return [d.category+':'+(d.categoryAxle||''),{category:d.category,axle:d.categoryAxle}]})).values()];
@@ -400,10 +370,10 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
     const {category,axle}=group;
     const groupNames=names.filter(name=>vehicleServices[name].category===category&&vehicleServices[name].categoryAxle===axle);
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'category',category}));
-    // Reload the already observed vehicle URL in the same tab. This retains
-    // normal per-tab session storage while releasing the previous Angular
-    // product catalogue rather than keeping it in SPA history memory.
-    await reopenVehicle(page,vehicleUrl,vin);
+    // Preserve the supplier's verified per-tab VIN context through its normal
+    // history navigation; a fresh generic vehicle page does not retain it.
+    await page.goBack({waitUntil:'domcontentloaded'});
+    if(page.url()!==vehicleUrl)await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
     try{await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor()}
     catch(error){console.warn(JSON.stringify({component:'supplier-extra-navigation',loginForm:await page.locator('input[type="password"]').isVisible().catch(()=>false),expiredSession:await page.getByText('Die aktuelle Sitzung ist abgelaufen!',{exact:true}).isVisible().catch(()=>false)}));throw error}
     await rejectVisibleCookieConsent(page);
@@ -494,7 +464,8 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,vin){
     previousCategories=[category];
   }
   // Leave the completed product list before opening the labour-data tab.
-  await reopenVehicle(page,vehicleUrl,vin);
+  await page.goBack({waitUntil:'domcontentloaded'});
+  if(page.url()!==vehicleUrl)await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
   return {selected,page};
 }
 
@@ -660,7 +631,7 @@ export async function readQuote(input, credentials) {
     await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor();
     stage = 'materials-select';
     const parts = await chooseMaterials(page);
-    if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames,input.vin);parts.push(...extra.selected);page=extra.page;}
+    if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames);parts.push(...extra.selected);page=extra.page;}
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
     await clickWithCookieConsent(page,page.getByRole('link', { name: 'Haynes Pro', exact: true }));
