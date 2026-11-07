@@ -468,7 +468,8 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     console.info(JSON.stringify({component:'supplier-extra-snapshot-criteria',category,cards:cards.slice(0,30).map(row=>({
       vin:/\bVIN\b/.test(row.text),product:components.some(c=>new RegExp(c.product,'i').test(row.text)),
       articleNumber:!!row.partNumber,quantity:Number(row.text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,
-      brand:catalogBrand(row.text,brakeBrands),retail:/UVPE:/.test(row.text),textLength:row.text.length}))}));
+      brand:catalogBrand(row.text,brakeBrands),retail:/UVPE:/.test(row.text),textLength:row.text.length,depth:row.depth,
+      productTerms:row.text.split('\n').map(x=>x.trim()).filter(x=>x.length<=120&&/(?:brem|brak|disc|scheib|filter|öl|oil|schraub|plug|pad|belag)/i.test(x)&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,4)}))}));
     for(let record of cards){
       let text=record.text;
       if(!components.some(c=>new RegExp(c.product,'i').test(text)))continue;
