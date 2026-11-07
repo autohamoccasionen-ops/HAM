@@ -57,7 +57,7 @@ proxy; do not call this API with the secret directly from browser code.
   Packaging multiples and unpriced items are rejected.
 - Each lookup starts a new, in-memory browser context. No session files,
   screenshots, traces, invoices, customer records or parts orders are saved.
-- One lookup at a time; busy requests return 429. A 120-second lookup deadline
+- One lookup at a time; busy requests return 429. A 240-second lookup deadline
   closes the context. No CAPTCHA solving, fingerprint changes or proxy routing.
 - Do not automatically retry VIN lookups or place anything in the parts cart.
 

@@ -166,21 +166,44 @@ export function materialCandidate(text, kind) {
 
 async function chooseMaterials(page) {
   const cards = await page.locator('[id^="part-detail-"]').all();
-  const candidates = [];
+  const entries = [];
   for (const card of cards) {
-    const text = await card.innerText();
-    for (const kind of ['filter', 'drain-plug']) {
-      const result = materialCandidate(text, kind);
-      if (result) candidates.push(result);
-    }
+    if (await card.isVisible()) entries.push({ card, text: await card.innerText() });
   }
-  return ['filter', 'drain-plug'].map(kind => {
+  const selectedParts = [];
+  for (const kind of ['filter', 'drain-plug']) {
     const priorities = kind === 'filter' ? ['MAHLE', 'MANN-FILTER', 'BOSCH'] : ['ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS'];
-    const list = candidates.filter(row => row.kind === kind).sort((a, b) => priorities.indexOf(a.brand) - priorities.indexOf(b.brand));
-    if (!list.length) throw manual('Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.');
-    const { brand, ...selected } = list[0];
-    return selected;
-  });
+    let selected;
+    brandSearch: for (const brand of priorities) {
+      for (const entry of entries) {
+        if (!entry.text.includes(brand) || !(kind === 'filter' ? /Ölfilter/.test(entry.text) : /Verschlussschraube, Ölwanne/.test(entry.text))) continue;
+        let candidate = materialCandidate(entry.text, kind);
+        if (!candidate) {
+          const details = entry.card.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
+          if (await details.count() === 1) {
+            await details.click();
+            await entry.card.getByText(/mit Dichtung|mit Dichtring/).first()
+              .waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+            entry.text = await entry.card.innerText();
+            candidate = materialCandidate(entry.text, kind);
+          }
+        }
+        if (candidate) { selected = candidate; break brandSearch; }
+      }
+    }
+    if (!selected) {
+      console.warn(JSON.stringify({ component: 'supplier-material-criteria', kind, cards: entries.slice(0, 16).map(({ text }) => ({
+        vinBadge: /\bVIN\b/.test(text), filterName: /Ölfilter/.test(text), plugName: /Verschlussschraube, Ölwanne/.test(text),
+        seal: /mit Dichtring|mit Dichtung/.test(text), preferredBrand: priorities.find(brand => text.includes(brand)) || null,
+        retailLabel: /UVPE:\s*\d/.test(text), unpriced: /Auf Anfrage/.test(text),
+        quantity: Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1]) || null
+      })) }));
+      throw manual('Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.');
+    }
+    const { brand, ...part } = selected;
+    selectedParts.push(part);
+  }
+  return selectedParts;
 }
 
 export function categoryCheckboxState(element) {
@@ -293,7 +316,7 @@ export async function readQuote(input, credentials) {
     controlError: /not a checkbox|not a radio/i.test(error?.message || '') ? 'UNSUPPORTED_NATIVE_CHECK'
       : /strict mode violation/i.test(error?.message || '') ? 'AMBIGUOUS_CONTROL' : null,
     consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
-  const browser = await chromium.launch({ headless: true }).catch(error => { reportFailure(error); throw error; });
+  const browser = await chromium.launch({ headless: true, timeout: 30000 }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
   const page = await context.newPage();
   const loginResponses = [];
@@ -318,7 +341,7 @@ export async function readQuote(input, credentials) {
   });
   page.setDefaultTimeout(20000);
   context.setDefaultNavigationTimeout(30000);
-  const deadline = setTimeout(() => context.close().catch(() => {}), 120000);
+  const deadline = setTimeout(() => context.close().catch(() => {}), 240000);
   try {
     stage = 'login-page';
     await page.goto(`${DSTORE}/dch-ax/login`, { waitUntil: 'domcontentloaded' });
