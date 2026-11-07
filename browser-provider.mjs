@@ -416,6 +416,12 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       // The initial result card carries the supplier's VIN fitment badge.
       // Unconfirmed universal alternatives must not become vehicle quotations.
       if(!/\bVIN\b/.test(text))continue;
+      if(definition.categoryAxle&&!catalogBrand(text,brakeBrands)){
+        const labels=await article.locator('img[alt]').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('alt')||'')
+          .map(x=>x.trim()).filter(x=>x&&x.length<=80&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,12));
+        const names=text.split('\n').map(x=>x.trim()).filter(x=>x.length<=100&&/Bremsbel|Bremskl|Belagsatz/i.test(x)).slice(0,3);
+        console.info(JSON.stringify({component:'supplier-extra-brand-evidence',category,labels,names}));
+      }
       if(!components.some(c=>componentCandidate(text,c,retailPriceCents,scope))){
         const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
         console.info(JSON.stringify({component:'supplier-extra-progress',step:'product-details',category,detailsCount:await details.count(),quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,brand:catalogBrand(text,brakeBrands),packaged:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(text)}));
