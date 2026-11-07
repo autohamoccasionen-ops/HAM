@@ -8,6 +8,7 @@ const publicMessages = {
   AUTOMATION_NOT_ENABLED: 'Die Preisabfrage wird noch geprüft. Bitte fragen Sie den Preis bei der Garage an.',
   SOURCE_UNAVAILABLE: 'Die Fahrzeugdaten konnten derzeit nicht vollständig geprüft werden. Bitte fragen Sie den Preis bei der Garage an.',
   AUTHENTICATION_REQUIRED: 'Der Datenzugang muss durch die Garage erneuert werden.',
+  CONSENT_UNAVAILABLE: 'Die Verbindung zum Datenanbieter ist derzeit nicht vollständig verfügbar. Bitte fragen Sie den Preis bei der Garage an.',
   MANUAL_REVIEW_REQUIRED: 'Ihre Auswahl wird individuell durch die Garage kalkuliert.',
   BUSY: 'Es läuft bereits eine Preisabfrage. Bitte versuchen Sie es in Kürze erneut.'
 };

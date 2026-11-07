@@ -34,3 +34,10 @@ test('failed consent saving leaves the overlay in place and propagates the error
     await assert.rejects(saveEssentialConsentInPage, /save failed/);
   });
 });
+
+test('an unresponsive privacy SDK times out without proceeding to consent or closing', async () => {
+  await withCmp({ isInitialized: () => new Promise(() => {}),
+    denyAllConsents: async () => assert.fail('must not proceed'), closeCmp: async () => assert.fail('must not close') }, async () => {
+    await assert.rejects(() => saveEssentialConsentInPage(10), /CMP_TIMEOUT_initialize/);
+  });
+});

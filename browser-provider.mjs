@@ -10,21 +10,40 @@ const invalidLogin = /Falsches Passwort|incorrect username or password|Benutzern
 // Runs in the supplier page. Only the CMP's documented public API is used:
 // https://usercentrics.com/docs/web/features/api/control-functionality/
 // No storage edits, overlay removal, request blocking or security bypasses.
-export async function saveEssentialConsentInPage() {
+export async function saveEssentialConsentInPage(timeoutMs = 10000) {
+  let timer;
+  let phase = 'initialize';
+  const operation = (async () => {
   const cmp = window.__ucCmp;
   if (!cmp || typeof cmp.isInitialized !== 'function' || !await cmp.isInitialized()) return 'not-ready';
   if (typeof cmp.isAgeVerificationRequired === 'function' && await cmp.isAgeVerificationRequired()) return 'manual-required';
   if (typeof cmp.isConsentRequired === 'function' && !await cmp.isConsentRequired()) return 'not-required';
   if (typeof cmp.denyAllConsents !== 'function' || typeof cmp.saveConsents !== 'function'
     || typeof cmp.closeCmp !== 'function') return 'unsupported';
+  phase = 'deny';
   await cmp.denyAllConsents();
+  phase = 'save';
   await cmp.saveConsents('IMPLICIT');
+  phase = 'close';
   await cmp.closeCmp();
   return 'essential-only-saved';
+  })();
+  try {
+    return await Promise.race([operation, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`CMP_TIMEOUT_${phase}`)), timeoutMs);
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 async function rejectVisibleCookieConsent(page) {
-  const consent = await page.evaluate(saveEssentialConsentInPage);
+  let consent;
+  try { consent = await page.evaluate(saveEssentialConsentInPage); }
+  catch (error) {
+    const phase = String(error?.message || '').match(/CMP_TIMEOUT_(initialize|deny|save|close)/)?.[1];
+    if (!phase) throw error;
+    console.warn(JSON.stringify({ component: 'supplier-consent', outcome: 'timeout', phase }));
+    throw new QuoteError('CONSENT_UNAVAILABLE', 'Das Cookie-Fenster des Datenanbieters konnte nicht abgeschlossen werden.', 503);
+  }
   if (consent === 'manual-required') throw new QuoteError('SOURCE_UNAVAILABLE', 'Der Datenanbieter erfordert eine manuelle Prüfung.', 503);
   if (consent === 'essential-only-saved') {
     console.info(JSON.stringify({ component: 'supplier-consent', outcome: 'essential-only-api-saved' }));
@@ -156,8 +175,10 @@ async function clickCategory(page, name) {
 export async function readQuote(input, credentials) {
   const { chromium } = await import('playwright');
   let stage = 'browser-launch';
+  const consentNetworkFailures = [];
   const reportFailure = error => console.warn(JSON.stringify({ component: 'supplier-lookup', stage,
-    failure: error instanceof QuoteError ? error.code : error?.name === 'TimeoutError' ? 'TIMEOUT' : 'BROWSER_ERROR' }));
+    failure: error instanceof QuoteError ? error.code : error?.name === 'TimeoutError' ? 'TIMEOUT' : 'BROWSER_ERROR',
+    consentNetworkFailures: consentNetworkFailures.slice(0, 10) }));
   const browser = await chromium.launch({ headless: true }).catch(error => { reportFailure(error); throw error; });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -165,11 +186,20 @@ export async function readQuote(input, credentials) {
   let loginRequestFailed = false;
   page.on('response', response => {
     const request = response.request();
+    const host = new URL(response.url()).hostname;
+    if (/(^|\.)usercentrics\.(eu|com)$/.test(host) && response.status() >= 400) {
+      consentNetworkFailures.push({ host, status: response.status() });
+    }
     if (stage === 'login-submit' && request.method() === 'POST' && new URL(response.url()).origin === DSTORE) {
       loginResponses.push(response.status());
     }
   });
   page.on('requestfailed', request => {
+    const host = new URL(request.url()).hostname;
+    if (/(^|\.)usercentrics\.(eu|com)$/.test(host)) {
+      const reason = request.failure()?.errorText || '';
+      consentNetworkFailures.push({ host, error: /^net::ERR_[A-Z_]+$/.test(reason) ? reason : 'NETWORK_ERROR' });
+    }
     if (stage === 'login-submit' && request.method() === 'POST' && new URL(request.url()).origin === DSTORE) loginRequestFailed = true;
   });
   page.setDefaultTimeout(20000);
