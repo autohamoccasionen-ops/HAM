@@ -352,6 +352,7 @@ async function clickCategory(page, name, explicitLabel, desired = true) {
 
 async function chooseRequestedMaterials(page,vehicleUrl,names){
   const selected=[];
+  let previousCategories=['Oelfilter','Ablassschraube Ölwanne'];
   const categories=[...new Set(names.map(name=>vehicleServices[name].category))];
   for(const category of categories){
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'category',category}));
@@ -365,12 +366,10 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     await page.locator('p-checkbox').getByText(category,{exact:true}).filter({visible:true}).first().waitFor();
     // Do not accumulate products from earlier categories in the same portal
     // session. Change normal checkbox controls and verify their actual state.
-    for(const control of await page.locator('p-checkbox').filter({visible:true}).all()){
-      if(await control.evaluate(categoryCheckboxState)!==true)continue;
-      if(await control.locator('input[type="checkbox"]').count()!==1)throw manual('Vorherige Teileauswahl konnte nicht eindeutig zurückgesetzt werden.');
-      await control.click();
-      for(let attempt=0;attempt<5&&await control.evaluate(categoryCheckboxState)!==false;attempt++)await page.waitForTimeout(100);
-      if(await control.evaluate(categoryCheckboxState)!==false)throw manual('Vorherige Teileauswahl konnte nicht eindeutig zurückgesetzt werden.');
+    for(const name of previousCategories){
+      const labels=page.locator('p-checkbox').getByText(name,{exact:true}).filter({visible:true});
+      console.info(JSON.stringify({component:'supplier-extra-reset',category:name,labelCount:await labels.count()}));
+      for(const label of await labels.all())await clickCategory(page,name,label,false);
     }
     const definition=vehicleServices[names.find(name=>vehicleServices[name].category===category)];
     if(definition.categoryAxle){
@@ -421,6 +420,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       if(!found)throw manual('Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.');
       const {brand,...part}=found;selected.push(part);
     }
+    previousCategories=[category];
   }
   // Leave the completed product list before opening the labour-data tab.
   await page.goBack({waitUntil:'domcontentloaded'});
