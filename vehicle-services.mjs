@@ -35,8 +35,8 @@ export function componentCandidate(text,component,readPrice,scope={}){
   if(component.axle){
     const side=component.axle==='front'?'Vorderachse|vorne':'Hinterachse|hinten';
     const other=component.axle==='front'?'Hinterachse|hinten':'Vorderachse|vorne';
-    const declared=new RegExp('(?:Einbau(?:seite|ort)|Standort)\\s*:\\s*(?:'+side+')','i').test(text);
-    if(!declared&&new RegExp('(?:Einbau(?:seite|ort)|Standort)\\s*:\\s*(?:'+other+')','i').test(text))return null;
+    const declared=new RegExp('(?:Einbau(?:seite|ort|position)|Standort)\\s*:\\s*(?:'+side+')','i').test(text);
+    if(!declared&&new RegExp('(?:Einbau(?:seite|ort|position)|Standort)\\s*:\\s*(?:'+other+')','i').test(text))return null;
     if(!declared&&!(scope.confirmed===true&&scope.axle===component.axle))return null;
   }
   const quantity=Number(text.match(/benötigte Stückzahl:\s*(\d+)\b/)?.[1]);
@@ -55,7 +55,13 @@ export function componentCandidate(text,component,readPrice,scope={}){
   const brands=component.brands||(component.axle?brakeBrands:['MANN-FILTER','MAHLE','BOSCH']);
   const brand=catalogBrand(text,brands);if(!brand)return null;
   let price;try{price=readPrice(text)}catch{return null}
-  return {kind:component.kind,partNumber:number,description:brand+' '+component.name,quantity,unitNetCents:price,priceBasis:'retail-ex-vat',brand};
+  const productLine=brand==='BREMBO'&&(/(?:^|\n)\s*PRIME LINE\b/i.test(text)||/Brembo Prime/i.test(text))?'Prime':null;
+  return {kind:component.kind,partNumber:number,description:brand+(productLine?' '+productLine:'')+' '+component.name,quantity,unitNetCents:price,priceBasis:'retail-ex-vat',brand,productLine};
+}
+export function uniqueOeVariant(candidates){
+  if(!candidates.length||candidates.some(x=>x.brand!=='BREMBO'))return null;
+  const standard=candidates.filter(x=>x.productLine==='Prime');
+  return standard.length===1?standard[0]:null;
 }
 export function operationEvidence(text,names){
   const matches=[];

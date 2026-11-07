@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {vehicleServices,componentCandidate,operationEvidence,catalogBrand} from '../vehicle-services.mjs';
+import {vehicleServices,componentCandidate,operationEvidence,catalogBrand,uniqueOeVariant} from '../vehicle-services.mjs';
 import {retailPriceCents} from '../quote.mjs';
 test('brake candidates require VIN fitment, exact axle and correct axle quantity',()=>{
  const c=vehicleServices['Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern'].components[0];
@@ -18,6 +18,15 @@ test('brake candidates require VIN fitment, exact axle and correct axle quantity
  assert.equal(componentCandidate(text.replace('Vorderachse','Hinterachse'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
  assert.equal(componentCandidate(text.replace('Einbauseite','Standort').replace('Vorderachse','Hinterachse'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
  assert.equal(componentCandidate(text.replace('Einbauseite','Standort'),c,retailPriceCents).quantity,2);
+ assert.equal(componentCandidate(text.replace('Einbauseite','Einbauposition').replace('Vorderachse','Hinterachse'),c,retailPriceCents,{confirmed:true,axle:'front'}),null);
+});
+test('only one explicitly identified OE-equivalent product line resolves an optional upgrade',()=>{
+ const prime={brand:'BREMBO',productLine:'Prime',partNumber:'TEST-STANDARD',unitNetCents:20000};
+ const upgrade={brand:'BREMBO',productLine:null,partNumber:'TEST-UPGRADE',unitNetCents:10000};
+ assert.equal(uniqueOeVariant([prime,upgrade]),prime);
+ assert.equal(uniqueOeVariant([prime,{...prime,partNumber:'TEST-OTHER-FITMENT'}]),null);
+ assert.equal(uniqueOeVariant([upgrade]),null);
+ assert.equal(uniqueOeVariant([prime,{...upgrade,brand:'ATE'}]),null);
 });
 test('manufacturer evidence is not confused with a brake system compatibility label',()=>{
  const text='Herstellereinschränkung: ATE\nKatalog-Marke: BREMBO';

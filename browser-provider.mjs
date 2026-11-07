@@ -1,5 +1,5 @@
 import { QuoteError, parseOilCapacity, parseOilHours, retailPriceCents } from './quote.mjs';
-import { vehicleServices,serviceComponents,componentCandidate,operationEvidence,catalogBrand,brakeBrands } from './vehicle-services.mjs';
+import { vehicleServices,serviceComponents,componentCandidate,operationEvidence,catalogBrand,brakeBrands,uniqueOeVariant } from './vehicle-services.mjs';
 import {engineOilSpecification,approvedOilProduct,oilBrands} from './oil-specs.mjs';
 
 // Read-only browser integration. No account changes, cart additions, orders,
@@ -522,6 +522,8 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
         const matches=[...new Map(candidates.filter(x=>x.brand===brand).map(x=>[x.partNumber,x])).values()];
         if(matches.length===1){found=matches[0];break}
         if(matches.length>1){
+          const standard=uniqueOeVariant(matches);
+          if(standard){found=standard;break}
           console.info(JSON.stringify({component:'supplier-extra-variants',kind:component.kind,variants:matches.map(match=>{
             const source=entries.find(text=>{try{return articleNumber(text)===match.partNumber}catch{return false}})||'';
             const lines=source.split('\n').map(x=>x.trim());
@@ -533,7 +535,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
         }
       }
       if(!found)throw manual('Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.');
-      const {brand,...part}=found;selected.push(part);
+      const {brand,productLine,...part}=found;selected.push(part);
     }
     previousCategories=[category];
   }
