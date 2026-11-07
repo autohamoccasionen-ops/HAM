@@ -182,6 +182,20 @@ async function readCatalogCard(card) {
   return normalizeCatalogText(text, labels);
 }
 
+async function closeHaynesLaunchDialog(page) {
+  const dialogs = page.getByRole('dialog').filter({ visible: true });
+  for (const dialog of await dialogs.all()) {
+    if (await dialog.getByRole('button', { name: 'Hier geht es zu HaynesPro', exact: true }).count() !== 1) continue;
+    const close = dialog.getByRole('button', { name: /^(Close|Schliessen|Schließen|Fenster schliessen|Fenster schließen)$/i });
+    if (await close.count() === 1 && await close.isVisible()) await close.click();
+    else await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden' });
+    console.info(JSON.stringify({ component: 'supplier-progress', stage: 'haynes-launch-dialog-closed' }));
+    return true;
+  }
+  return false;
+}
+
 export function materialCandidate(text, kind) {
   text = clean(text);
   if (!/\bVIN\b/.test(text) || /Auf Anfrage|ABVERKAUFSARTIKEL|\d+ Stück = 1 Pack/.test(text)) return null;
@@ -464,6 +478,7 @@ export async function readQuote(input, credentials) {
     const haynes = await popup;
     haynes.setDefaultTimeout(20000);
     await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
+    await closeHaynesLaunchDialog(page);
     stage = 'labour-lookup';
     await haynes.getByRole('link', { name: /Arbeitswerte/ }).click();
     await haynes.getByRole('heading', { name: 'Arbeitswerte', exact: true }).waitFor();
@@ -497,8 +512,14 @@ export async function readQuote(input, credentials) {
       if (/Artikel Nr\.:\s*15F6E6(?:\s|$)/.test(text)) oilEntries.push(article);
     }
     if (oilEntries.length !== 1) throw manual('Motorölartikel nicht eindeutig.');
-    const oilCard = oilEntries[0];
+    let oilCard = oilEntries[0];
     await rejectVisibleCookieConsent(page, true);
+    await closeHaynesLaunchDialog(page);
+    const matchingOilDialogs = [];
+    for (const dialog of await page.getByRole('dialog').filter({ visible: true }).all()) {
+      if (/Artikel Nr\.:\s*15F6E6(?:\s|$)/.test(await dialog.innerText())) matchingOilDialogs.push(dialog);
+    }
+    if (matchingOilDialogs.length === 1) oilCard = matchingOilDialogs[0];
     stage = 'oil-product-details';
     const moreDetails = oilCard.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
     if (await moreDetails.count() === 1) {
@@ -519,6 +540,15 @@ export async function readQuote(input, credentials) {
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {
+    if (stage.startsWith('oil-')) {
+      const dialogs = [];
+      for (const dialog of await page.getByRole('dialog').filter({ visible: true }).all().catch(() => [])) {
+        const text = await dialog.innerText().catch(() => '');
+        dialogs.push({ haynesLaunch: /Hier geht es zu HaynesPro/.test(text), oilProduct: /15F6E6/.test(text),
+          hasCloseButton: await dialog.getByRole('button', { name: /^(Close|Schliessen|Schließen)$/i }).count() > 0 });
+      }
+      console.warn(JSON.stringify({ component: 'supplier-oil-dialogs', stage, dialogs }));
+    }
     if (stage === 'materials-filter-category' || stage === 'materials-drain-category') {
       const categoryName = stage === 'materials-filter-category' ? 'Oelfilter' : 'Ablassschraube Ölwanne';
       const controls = await page.getByText(categoryName, { exact: true }).locator('..').getByRole('checkbox')
