@@ -786,7 +786,12 @@ export async function readQuote(input, credentials) {
             const title=(await target.innerText()).trim();
             if(!visited.has(title)){visited.add(title);next=target;break}
           }
-          if(!next)break;
+          if(!next){
+            console.info(JSON.stringify({component:'supplier-wiper-menu',labels:await haynes.locator('a,button,[role="menuitem"],h2,h3,h4')
+              .evaluateAll(nodes=>[...new Set(nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>(n.innerText||'').trim())
+                .filter(t=>t&&t.length<90&&!/[0-9@]|https?:|OE:/i.test(t)))].slice(0,100))}));
+            break;
+          }
           await next.click();
           await haynes.getByText(new RegExp(vehicleServices[name].operations[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))).first().waitFor({timeout:5000}).catch(()=>{});
           expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
