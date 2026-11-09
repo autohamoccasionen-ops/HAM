@@ -523,7 +523,8 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,expectedVin){
     // only its visible normal filter control; keep the verified VIN context.
     // This is not another VIN lookup and never substitutes a universal part.
     if(!requestedProductsPresent(cards,components)){
-      const reset=page.getByRole('button',{name:'Filter zurücksetzen',exact:true}).filter({visible:true});
+      // This control is also rendered as a link without button semantics.
+      const reset=page.getByText('Filter zurücksetzen',{exact:true}).filter({visible:true});
       if(await reset.count()===1&&await reset.isEnabled()){
         if(!expectedVin||!(await visibleText(page)).includes(expectedVin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
         await clickWithCookieConsent(page,reset);
