@@ -465,6 +465,21 @@ async function reportCatalogueNavigation(page,category){
         &&/Teilebaum|Katalog|Artikel|Filter|Batterie|Scheiben|Wischer|Quick Click|Wartung/i.test(t)))].slice(0,70))}));
 }
 
+async function openVehicleFilterTree(page,category,expectedVin){
+  if(category!=='Luftfilter')return false;
+  if(!expectedVin||!(await visibleText(page)).includes(expectedVin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
+  const group=page.getByText('Filter',{exact:true}).filter({visible:true});
+  if(await group.count()!==1)return false;
+  await clickWithCookieConsent(page,group);
+  const leaf=page.getByText(category,{exact:true}).filter({visible:true});
+  try{await leaf.first().waitFor({state:'visible',timeout:5000})}catch{return false}
+  if(await leaf.count()!==1)return false;
+  await clickWithCookieConsent(page,leaf);
+  await page.getByText(expectedVin,{exact:false}).first().waitFor({state:'visible'});
+  console.info(JSON.stringify({component:'supplier-vehicle-category-tree',category}));
+  return true;
+}
+
 async function chooseRequestedMaterials(page,vehicleUrl,names,expectedVin){
   const selected=[];
   let previousCategories=['Oelfilter','Ablassschraube Ölwanne'];
@@ -542,6 +557,14 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,expectedVin){
           if(attempt>=4&&await noParts.isVisible())break;
           await page.waitForTimeout(500);
         }
+      }
+    }
+    if(!requestedProductsPresent(cards,components)&&await openVehicleFilterTree(page,category,expectedVin)){
+      for(let attempt=0;attempt<60;attempt++){
+        cards=await catalogueSnapshot(page);
+        if(requestedProductsPresent(cards,components))break;
+        if(attempt>=4&&await noParts.isVisible())break;
+        await page.waitForTimeout(500);
       }
     }
     if(!requestedProductsPresent(cards,components)&&await noParts.isVisible()){
