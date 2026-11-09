@@ -170,6 +170,16 @@ export async function waitForArticle(page, number) {
   }, number, {timeout:30000});
 }
 
+export async function waitForVin(page, vin) {
+  const confirmed=page.getByText(vin,{exact:false}).first();
+  const unavailable=page.getByText('VIN-Suche vorübergehend nicht verfügbar',{exact:true});
+  const vehicle=page.getByRole('button',{name:'Fahrzeug ändern',exact:true});
+  await vehicle.or(unavailable).first().waitFor({state:'visible',timeout:30000});
+  if(await unavailable.isVisible())throw new QuoteError('SOURCE_UNAVAILABLE',
+    'Die VIN-Suche des Datenanbieters ist vorübergehend nicht verfügbar.',503);
+  await confirmed.waitFor({state:'visible',timeout:30000});
+}
+
 function articleNumber(text) {
   const match = text.match(/Artikel Nr\.:\s*([^\n]+)/);
   if (!match) throw manual('Artikelnummer nicht eindeutig gelesen.');
@@ -653,6 +663,7 @@ export async function readQuote(input, credentials) {
   const reportFailure = error => console.warn(JSON.stringify({ component: 'supplier-lookup', stage,
     failure: error instanceof QuoteError ? error.code : error?.name === 'TimeoutError' ? 'TIMEOUT' : 'BROWSER_ERROR',
     reviewReason: { 'Teilekategorie nicht eindeutig.': 'CATEGORY_LABEL_AMBIGUOUS',
+      'Die VIN-Suche des Datenanbieters ist vorübergehend nicht verfügbar.':'VIN_SEARCH_UNAVAILABLE',
       'Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.':'SOURCE_NO_PARTS',
       'Teileauswahl muss geprüft werden.': 'CATEGORY_CONTROL_UNCONFIRMED',
       'Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.': 'MATERIALS_UNCONFIRMED',
@@ -750,7 +761,7 @@ export async function readQuote(input, credentials) {
     stage = 'vehicle-vin-confirmation';
     // The account can reopen its previously selected vehicle. The change-
     // vehicle button alone is therefore not evidence that this VIN resolved.
-    await page.getByText(input.vin, { exact: false }).first().waitFor({ state: 'visible', timeout: 30000 });
+    await waitForVin(page,input.vin);
     await page.getByRole('button', { name: 'Fahrzeug ändern', exact: true }).waitFor();
     const text = await visibleText(page);
     if (!text.includes(input.vin)) throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
