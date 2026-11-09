@@ -868,9 +868,9 @@ async function chooseGraphMaterials(page,input) {
   return parts;
 }
 
-export async function chooseApprovedEngineOil(page,spec){
+export async function chooseApprovedEngineOil(page,spec,gradeOnly=false){
   const grade=spec.viscosity.replace(/W(\d)/,'W-$1');
-  await search(page,spec.query+' '+grade);
+  await search(page,gradeOnly?'Motoröl '+grade:spec.query+' '+grade);
   const candidates=[];
   let rows=[];
   const matchingGrade=text=>[...text.matchAll(/\b(\d{1,2}W)[ -]?(\d{2})\b/gi)]
@@ -897,6 +897,7 @@ export async function chooseApprovedEngineOil(page,spec){
       unitNetCents:price,priceBasis:'retail-ex-vat',rank:brand?oilBrands.indexOf(brand):oilBrands.length});
   }
   candidates.sort((a,b)=>a.rank-b.rank||a.unitNetCents-b.unitNetCents||a.partNumber.localeCompare(b.partNumber));
+  if(!candidates.length&&!gradeOnly)return chooseApprovedEngineOil(page,spec,true);
   if(!candidates.length){
     const cards=await catalogueSnapshot(page);
     console.info(JSON.stringify({component:'supplier-oil-candidates',approval:spec.approval,viscosity:spec.viscosity,
