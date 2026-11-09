@@ -771,6 +771,29 @@ export async function readQuote(input, credentials) {
         if(/wischer/i.test(name))console.info(JSON.stringify({component:'supplier-wiper-operations',
           names:expandedLabourText.split('\n').map(x=>x.trim()).filter(x=>x.length<150&&/Wisch|Windschutz|Heckscheibe|Karosserie/.test(x)&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,30)}));
       }
+      // Wiper operations can live under electrical equipment rather than the
+      // exterior-body group. Follow only uniquely labelled navigation groups;
+      // never click an individual repair operation to discover its duration.
+      if(!evidence&&/wischer/i.test(name)){
+        const visited=new Set();
+        const labels=[/^(?:Scheibenwischer(?:anlage)?|Scheibenwisch[- /]*(?:und[- /]*)?Waschanlage|Wisch[- /]*(?:und[- /]*)?Waschanlage)$/i,
+          /^(?:Elektrik|Elektrische (?:Anlage|Ausstattung|Ausrüstung))$/i];
+        for(let step=0;step<4&&!evidence;step++){
+          let next=null;
+          for(const label of labels){
+            const target=haynes.getByRole('link',{name:label}).filter({visible:true});
+            if(await target.count()!==1)continue;
+            const title=(await target.innerText()).trim();
+            if(!visited.has(title)){visited.add(title);next=target;break}
+          }
+          if(!next)break;
+          await next.click();
+          await haynes.getByText(new RegExp(vehicleServices[name].operations[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))).first().waitFor({timeout:5000}).catch(()=>{});
+          expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
+          console.info(JSON.stringify({component:'supplier-wiper-navigation',groups:[...visited],
+            names:expandedLabourText.split('\n').map(x=>x.trim()).filter(x=>x.length<150&&/Wisch|Elektr|Waschanlage/.test(x)&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,40)}));
+        }
+      }
       if(!evidence)throw manual('Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.');
       extraLabour.push({service:name,...evidence});
     }
