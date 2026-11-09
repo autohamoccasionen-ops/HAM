@@ -186,11 +186,6 @@ export function vehicleIdFromUrl(url){
   catch{return null}
 }
 
-export function isQuickViewVehicleUrl(url){
-  try{return new URL(String(url)).pathname.replace(/\/$/,'').endsWith('/quickview/identification')}
-  catch{return false}
-}
-
 export function tecdocIdFromText(text){
   const ids=[...new Set([...String(text).matchAll(/TecDoc-Nummer:\s*(\d+)(?!\d)/g)].map(m=>m[1]))];
   return ids.length===1&&Number(ids[0])>0?ids[0]:null;
@@ -814,10 +809,10 @@ export async function readQuote(input, credentials) {
     const text = await visibleText(page);
     if (!text.includes(input.vin)) throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
     stage = 'vehicle-route-confirmation';
-    // The vehicle header can render before the SPA updates its route. Wait
-    // for the actual vehicle URL instead of rejecting the still-visible home
-    // route; a vehicle route without a trailing slash is valid too.
-    await page.waitForURL(url=>vehicleIdFromUrl(url)!==null||isQuickViewVehicleUrl(url),{timeout:30000});
+    // VIN-specific views do not all encode a TecDoc identifier in the URL.
+    // Confirm the actual VIN header and its linked HaynesPro vehicle below;
+    // a route shape is not a substitute for that vehicle evidence.
+    if(new URL(page.url()).origin!==DSTORE)throw manual('Fahrzeugzuordnung nicht bestätigt.');
     let vehicleId = vehicleIdFromUrl(page.url());
     let preloadedHaynes=null;
     stage = 'vehicle-header-confirmation';
@@ -829,7 +824,7 @@ export async function readQuote(input, credentials) {
       if (description.includes(input.vin) && description.length <= 1500) { vehicle = description; break; }
     }
     if (!vehicle) throw manual('Fahrzeugzuordnung nicht bestätigt.');
-    // VIN Quick View has no TecDoc number in its route. Obtain its explicit
+    // Some VIN views have no TecDoc number in their route. Obtain its explicit
     // identifier from the linked HaynesPro vehicle instead of guessing a
     // catalogue model or treating a history entry as a confirmed vehicle.
     if(!vehicleId){
