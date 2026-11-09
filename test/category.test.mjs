@@ -1,11 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin, vehicleIdFromUrl, isQuickViewVehicleUrl, tecdocIdFromText } from '../browser-provider.mjs';
+import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin, vehicleIdFromUrl, tecdocIdFromText } from '../browser-provider.mjs';
 
-test('VIN Quick View is recognized without inventing a catalogue identifier',()=>{
-  assert.equal(isQuickViewVehicleUrl('https://supplier.test/dch-ax/quickview/identification'),true);
-  assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/quickview/identification'),null);
-  assert.equal(isQuickViewVehicleUrl('https://supplier.test/dch-ax/home?next=/quickview/identification'),false);
+test('a VIN view without a route identifier requires an explicit unique HaynesPro identifier',()=>{
+  assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/identification'),null);
   assert.equal(tecdocIdFromText('Synthetic vehicle\nTecDoc-Nummer: 12345\nArbeitswerte'),'12345');
   assert.equal(tecdocIdFromText('TecDoc-Nummer: 12345\nTecDoc-Nummer: 99999'),null);
   assert.equal(tecdocIdFromText('Synthetic vehicle without TecDoc identifier'),null);
