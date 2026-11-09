@@ -200,7 +200,7 @@ export async function lookupVin(page, vin) {
   }
 }
 
-async function openHaynesByVin(context, page, vin) {
+async function openHaynesByVin(context, page, vin, vehicleUrl) {
   // Preserve this tab's normal signed-in session. A context.newPage() has no
   // opener and does not inherit tab-scoped supplier authentication state.
   await page.goto(DSTORE+'/dch-ax/home',{waitUntil:'domcontentloaded'});
@@ -227,7 +227,7 @@ async function openHaynesByVin(context, page, vin) {
     await haynes.getByText('FIN: '+vin,{exact:true}).waitFor({timeout:45000});
   }
   await closeHaynesLaunchDialog(page);
-  await page.goBack({waitUntil:'domcontentloaded'});
+  await page.goto(vehicleUrl,{waitUntil:'domcontentloaded'});
   await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
   if(!(await visibleText(page)).includes(vin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
   return haynes;
@@ -776,13 +776,30 @@ async function graphPosition(page,name) {
   const checkbox=rows.getByRole('checkbox');
   const refinements=page.getByRole('dialog',{name:'Filter',exact:true});
   const closeRefinements=async()=>{
-    if(!await refinements.isVisible())return false;
-    // Resetting optional catalogue refinements can reopen their chooser.
-    // Cancel that chooser, retaining the unfiltered VIN drawing underneath.
-    await clickWithCookieConsent(page,refinements.getByRole('button',{name:'Abbrechen',exact:true}));
-    await refinements.waitFor({state:'hidden'});
-    console.info(JSON.stringify({component:'supplier-progress',stage:'graph-optional-filter-closed'}));
-    return true;
+    if(await refinements.isVisible()) {
+      // Resetting optional catalogue refinements can reopen their chooser.
+      await clickWithCookieConsent(page,refinements.getByRole('button',{name:'Abbrechen',exact:true}));
+      await refinements.waitFor({state:'hidden'});
+      console.info(JSON.stringify({component:'supplier-progress',stage:'graph-optional-filter-closed'}));
+      return true;
+    }
+    // A catalogue reference/image preview has a single ordinary Close control.
+    // Do not dismiss forms, verification frames, agreement or sign-in dialogs.
+    for(const dialog of await page.getByRole('dialog').filter({visible:true}).all()) {
+      const close=dialog.getByRole('button',{name:/^(Close|Schließen|Schliessen)$/i});
+      if(await close.count()!==1||await dialog.getByRole('button').count()!==1)continue;
+      const shape=await dialog.evaluate(n=>({
+        image:!!n.querySelector('img[alt="Workplace"],img[alt="graphic-part-image"]'),
+        empty:!(n.innerText||'').trim(),
+        form:!!n.querySelector('input,select,textarea,iframe,[role="checkbox"],[role="textbox"]'),
+        guarded:/Anmeld|Passwort|Sitzung|captcha|robot|human|verif|zustimm|agreement|terms/i.test(n.innerText||'')
+      }));
+      if(shape.form||shape.guarded||!shape.image&&!shape.empty)continue;
+      await close.click();await dialog.waitFor({state:'hidden'});
+      console.info(JSON.stringify({component:'supplier-progress',stage:'graph-reference-preview-closed'}));
+      return true;
+    }
+    return false;
   };
   await closeRefinements();
   try{await checkbox.check({timeout:5000})}
@@ -992,7 +1009,6 @@ export async function readQuote(input, credentials) {
     // a route shape is not a substitute for that vehicle evidence.
     if(new URL(page.url()).origin!==DSTORE)throw manual('Fahrzeugzuordnung nicht bestätigt.');
     let vehicleId = vehicleIdFromUrl(page.url());
-    let preloadedHaynes=null;
     stage = 'vehicle-header-confirmation';
     let vehicle = '';
     let vehicleRegion = page.getByRole('button',{name:'Fahrzeug ändern',exact:true});
@@ -1006,12 +1022,7 @@ export async function readQuote(input, credentials) {
     // identifier from the linked HaynesPro vehicle instead of guessing a
     // catalogue model or treating a history entry as a confirmed vehicle.
     const graphical=new URL(page.url()).pathname==='/dch-ax/yqservice/graphic-search';
-    if(!vehicleId){
-      stage='haynes-vin-identification';
-      if(!graphical)throw manual('Fahrzeugzuordnung nicht bestätigt.');
-      preloadedHaynes=await openHaynesByVin(context,page,input.vin);
-      console.info(JSON.stringify({component:'supplier-progress',stage:'haynes-vin-confirmed'}));
-    }
+    if(!vehicleId&&!graphical)throw manual('Fahrzeugzuordnung nicht bestätigt.');
     const vehicleUrl=page.url();
     const vehicleExtraNames=(input.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'vehicle-confirmed' }));
@@ -1040,7 +1051,7 @@ export async function readQuote(input, credentials) {
     }
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
-    const haynes = preloadedHaynes||await openHaynesPage(context,page);
+    const haynes = graphical?await openHaynesByVin(context,page,input.vin,vehicleUrl):await openHaynesPage(context,page);
     if(graphical)await haynes.getByText('FIN: '+input.vin,{exact:true}).waitFor();
     else await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
     const haynesOverviewUrl=haynes.url();
@@ -1179,6 +1190,8 @@ export async function readQuote(input, credentials) {
         loginFormVisible:await page.locator('input[type="password"]').isVisible().catch(()=>false),
         filterDialogVisible:await page.getByRole('dialog',{name:'Filter',exact:true}).isVisible().catch(()=>false),
         dialogs:await page.getByRole('dialog').evaluateAll(nodes=>nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>({
+          images:Array.from(n.querySelectorAll('img')).map(x=>x.getAttribute('alt')||'').filter(t=>t.length<80&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)),
+          form:!!n.querySelector('input,select,textarea,iframe'),
           heading:Array.from(n.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).map(x=>(x.innerText||'').trim()).filter(t=>t.length<100&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)),
           buttons:Array.from(n.querySelectorAll('button')).map(x=>(x.innerText||'').trim()).filter(t=>t.length<60&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t))}))),
         visibleControls:await page.locator('button,a,[role="heading"]').evaluateAll(nodes=>[...new Set(nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>(n.innerText||'').trim()).filter(t=>/^(Einloggen|Abbrechen|Bestätigen|Schließen|Schliessen|Close|Filter|OK)$/i.test(t)))])}));
