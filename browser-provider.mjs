@@ -200,21 +200,36 @@ export async function lookupVin(page, vin) {
   }
 }
 
-async function openHaynesByVin(context, vin) {
-  const entry=await context.newPage();
-  await entry.goto(DSTORE+'/dch-ax/home',{waitUntil:'domcontentloaded'});
-  // The signed-in context already has its consent choice. Only act on a
-  // visible CMP here; an unrelated SDK initializer must not block navigation.
-  await clickVisibleCookieConsent(entry);
+async function openHaynesByVin(context, page, vin) {
+  // Preserve this tab's normal signed-in session. A context.newPage() has no
+  // opener and does not inherit tab-scoped supplier authentication state.
+  await page.goto(DSTORE+'/dch-ax/home',{waitUntil:'domcontentloaded'});
+  await page.getByRole('heading',{name:'Fahrzeugsuche',exact:true}).waitFor();
+  console.info(JSON.stringify({component:'supplier-progress',stage:'haynes-entry-ready'}));
+  await clickVisibleCookieConsent(page);
   const popup=context.waitForEvent('page');
-  await clickWithCookieConsent(entry,entry.getByRole('link',{name:/Haynes Pro/}));
-  const haynes=await popup; haynes.setDefaultTimeout(20000);
-  await haynes.getByRole('link',{name:'Suche',exact:true}).click();
-  await haynes.getByRole('link',{name:'FIN',exact:true}).click();
-  const search=haynes.getByRole('textbox',{name:'Suchen nach Eingabe (FIN)',exact:true});
-  await search.fill(''); await search.pressSequentially(vin,{delay:30});
-  await haynes.getByText('FIN: '+vin,{exact:true}).waitFor({timeout:45000});
-  await entry.close();
+  await clickWithCookieConsent(page,page.getByRole('link',{name:/Haynes Pro/}));
+  console.info(JSON.stringify({component:'supplier-progress',stage:'haynes-entry-clicked'}));
+  const launch=page.getByRole('button',{name:'Hier geht es zu HaynesPro',exact:true});
+  const opened=await Promise.race([popup.then(()=>true),launch.waitFor({state:'visible'}).then(()=>false)]);
+  if(!opened)await clickWithCookieConsent(page,launch);
+  const haynes=await popup;haynes.setDefaultTimeout(20000);
+  await haynes.getByRole('link',{name:'Pkw',exact:true}).waitFor();
+  console.info(JSON.stringify({component:'supplier-progress',stage:'haynes-page-ready'}));
+  if(!await haynes.getByText('FIN: '+vin,{exact:true}).isVisible()) {
+    // The provider can reopen an earlier vehicle. Return through its visible
+    // Pkw navigation and require a new FIN-confirmed result for this request.
+    await haynes.getByRole('link',{name:'Pkw',exact:true}).click();
+    await haynes.getByRole('link',{name:'Suche',exact:true}).click();
+    await haynes.getByRole('link',{name:'FIN',exact:true}).click();
+    const search=haynes.getByRole('textbox',{name:'Suchen nach Eingabe (FIN)',exact:true});
+    await search.fill('');await search.pressSequentially(vin,{delay:30});
+    await haynes.getByText('FIN: '+vin,{exact:true}).waitFor({timeout:45000});
+  }
+  await closeHaynesLaunchDialog(page);
+  await page.goBack({waitUntil:'domcontentloaded'});
+  await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
+  if(!(await visibleText(page)).includes(vin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
   return haynes;
 }
 
@@ -962,7 +977,7 @@ export async function readQuote(input, credentials) {
     if(!vehicleId){
       stage='haynes-vin-identification';
       if(!graphical)throw manual('Fahrzeugzuordnung nicht bestätigt.');
-      preloadedHaynes=await openHaynesByVin(context,input.vin);
+      preloadedHaynes=await openHaynesByVin(context,page,input.vin);
       console.info(JSON.stringify({component:'supplier-progress',stage:'haynes-vin-confirmed'}));
     }
     const vehicleUrl=page.url();
