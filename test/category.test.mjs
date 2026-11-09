@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent } from '../browser-provider.mjs';
+import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle } from '../browser-provider.mjs';
+
+test('an earlier results card cannot satisfy the requested oil article wait', async () => {
+  let selector;
+  const page = {locator: () => ({filter: options => {
+    selector = options.hasText;
+    return {first: () => ({waitFor: async () => {
+      assert.equal(selector.test('Artikel Nr.: OLD-FILTER\nÖlfilter'),false);
+      assert.equal(selector.test('Artikel Nr.: 15F6E60\nMotoröl'),false);
+      assert.equal(selector.test('Artikel Nr.: 15F6E6\nMotoröl'),true);
+    }})};
+  }})};
+  await waitForArticle(page,'15F6E6');
+});
 
 test('combined brake work waits for both discs and pads instead of the first matching product',()=>{
   const components=[{product:'^Bremsscheibe\\b'},{product:'^Bremsbelagsatz\\b'}];
