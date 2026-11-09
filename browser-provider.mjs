@@ -63,6 +63,7 @@ async function rejectVisibleCookieConsent(page, waitForUI = false) {
       return result;
     });
   } catch (error) {
+
     const phase = String(error?.message || '').match(/CMP_TIMEOUT_(initialize|deny|save|close)/)?.[1];
     if (!phase) throw error;
     console.warn(JSON.stringify({ component: 'supplier-consent', outcome: 'timeout', phase }));
@@ -965,6 +966,14 @@ export async function readQuote(input, credentials) {
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {
+    if(stage==='vehicle-route-confirmation'){
+      const pathname=new URL(page.url()).pathname;
+      const known=new Set(['dch-ax','vehicle','home','search','articles','article-list','parts']);
+      const pathShape=pathname.split('/').map(part=>known.has(part)?part:part.replace(/[0-9]/g,'#').replace(/[^VM#]/gi,'x')).join('/').slice(0,200);
+      console.warn(JSON.stringify({component:'supplier-vehicle-route',pathShape,
+        headings:await page.locator('h1,h2,h3,h4,[role="dialog"] [role="heading"]').evaluateAll(nodes=>nodes
+          .map(n=>(n.innerText||'').trim()).filter(t=>t.length<100&&/Fahrzeug|VIN|Suchergebnis|Auswahl/i.test(t)&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)).slice(0,12))}));
+    }
     if (stage.startsWith('oil-')) {
       const dialogs = [];
       for (const dialog of await page.getByRole('dialog').filter({ visible: true }).all().catch(() => [])) {
