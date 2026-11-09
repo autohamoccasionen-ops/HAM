@@ -1069,7 +1069,11 @@ export async function readQuote(input, credentials) {
     const country = haynes.locator('#selectFilterCountry');
     if (await country.count() === 1) await country.selectOption({ label: 'Schweiz' });
     const lubricants = await visibleText(haynes);
-    const engine = lubricants.split(/\nMotor(?: \([^\n]*\))?\n/).slice(1).join('\nMotor\n').split(/\nKühlsystem\n/)[0];
+    const engineHeading=haynes.getByRole('heading',{level:2,name:/^Motor(?:\s*\([^)]*\))?\s*$/}).filter({visible:true});
+    if(await engineHeading.count()!==1)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
+    // The contents list repeats the Motor label before the actual data. Read
+    // the heading's own section so table-of-contents text cannot truncate it.
+    const engine=await engineHeading.locator('..').innerText();
     const litres = parseOilCapacity(engine);
     const oilSpecification=engineOilSpecification(engine);
     if(!oilSpecification)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
