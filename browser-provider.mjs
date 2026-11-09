@@ -180,6 +180,11 @@ export async function waitForVin(page, vin) {
   await confirmed.waitFor({state:'visible',timeout:30000});
 }
 
+export function vehicleIdFromUrl(url){
+  try{return new URL(String(url)).pathname.match(/\/vehicle\/V(\d+)M\d+(?:\/|$)/)?.[1]||null}
+  catch{return null}
+}
+
 function articleNumber(text) {
   const match = text.match(/Artikel Nr\.:\s*([^\n]+)/);
   if (!match) throw manual('Artikelnummer nicht eindeutig gelesen.');
@@ -767,7 +772,11 @@ export async function readQuote(input, credentials) {
     const text = await visibleText(page);
     if (!text.includes(input.vin)) throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
     stage = 'vehicle-route-confirmation';
-    const vehicleId = new URL(page.url()).pathname.match(/\/vehicle\/V(\d+)M\d+\//)?.[1];
+    // The vehicle header can render before the SPA updates its route. Wait
+    // for the actual vehicle URL instead of rejecting the still-visible home
+    // route; a vehicle route without a trailing slash is valid too.
+    await page.waitForURL(url=>vehicleIdFromUrl(url)!==null,{timeout:30000});
+    const vehicleId = vehicleIdFromUrl(page.url());
     if (!vehicleId) throw manual('Fahrzeugzuordnung nicht bestätigt.');
     stage = 'vehicle-header-confirmation';
     let vehicle = '';
