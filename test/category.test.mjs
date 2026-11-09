@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle } from '../browser-provider.mjs';
+import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin } from '../browser-provider.mjs';
+
+test('supplier VIN outage stops immediately even when an old vehicle label remains', async () => {
+  let confirmedWaits=0;
+  const unavailable={isVisible:async()=>true};
+  const confirmed={waitFor:async()=>{confirmedWaits++}};
+  const page={getByRole:()=>({or:()=>({first:()=>({waitFor:async()=>{}})})}),
+    getByText:(text)=>text==='VIN-Suche vorübergehend nicht verfügbar'?unavailable:{first:()=>confirmed}};
+  await assert.rejects(()=>waitForVin(page,'W0000000000000000'),{code:'SOURCE_UNAVAILABLE',status:503});
+  assert.equal(confirmedWaits,0);
+});
 
 test('oil lookup waits for the exact article in its complete visible card', async () => {
   const previous=globalThis.document;
