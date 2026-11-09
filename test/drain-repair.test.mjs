@@ -18,6 +18,14 @@ test('a declared repair kit retains exact VIN plug fitment, thread, manufacturer
   assert.equal(part.kind,'drain-plug');
 });
 
+test('ELRING decimal-comma references remain complete article numbers',()=>{
+  const numeric=original.replace('PLUG-A','123.456').replace('KIT-A, KIT-B','505,540');
+  assert.deepEqual(drainPlugRepairNumbers(numeric),['505.540']);
+  assert.deepEqual(drainPlugRepairNumbers(numeric.replace('505,540','505,540, 877,840')),['505.540','877.840']);
+  assert.deepEqual(drainPlugRepairNumbers(numeric.replace('505,540','505.540; 877.840')),['505.540','877.840']);
+  assert.equal(replacementDrainPlug(numeric,kit.replace('KIT-A','505.540'),'505.540').partNumber,'505.540');
+});
+
 test('unrelated, unsealed, different-thread, different-brand and multi-pack plugs cannot become repair kits',()=>{
   for(const alternative of [kit.replace('mit Dichtring','ohne Dichtring'),kit.replace('M14x1,5x33','M14x1,5x25'),
     kit.replace('ELRING','FEBI BILSTEIN'),kit+'\n5 Stück = 1 Pack',kit+'\nbenötigte Stückzahl: 2'])
