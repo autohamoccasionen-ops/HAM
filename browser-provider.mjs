@@ -870,7 +870,7 @@ async function chooseGraphMaterials(page,input) {
 
 export async function chooseApprovedEngineOil(page,spec,gradeOnly=false){
   const grade=spec.viscosity.replace(/W(\d)/,'W-$1');
-  await search(page,gradeOnly?'Motoröl '+grade:spec.query+' '+grade);
+  await search(page,gradeOnly?grade:spec.query+' '+grade);
   const candidates=[];
   let rows=[];
   const matchingGrade=text=>[...text.matchAll(/\b(\d{1,2}W)[ -]?(\d{2})\b/gi)]
@@ -902,7 +902,7 @@ export async function chooseApprovedEngineOil(page,spec,gradeOnly=false){
     const cards=await catalogueSnapshot(page);
     console.info(JSON.stringify({component:'supplier-oil-candidates',approval:spec.approval,viscosity:spec.viscosity,
       cards:cards.map(row=>({product:/Motor(?:en)?öl/i.test(row.text),approved:approvedOilProduct(row.text,spec),
-        specs:row.text.split('\\n').map(line=>line.trim()).filter(line=>line.length<160&&/Herstellerfreigabe|Inhalt \\[Liter\\]|\\b\\d{1,2}W[ -]?\\d{2}\\b/i.test(line)&&!/@|https?:|[A-HJ-NPR-Z0-9]{17}/.test(line)).slice(0,8)}))}));
+        specs:row.text.split('\n').map(line=>line.trim()).filter(line=>line.length<160&&/Herstellerfreigabe|Inhalt \[Liter\]|\b\d{1,2}W[ -]?\d{2}\b/i.test(line)&&!/@|https?:|[A-HJ-NPR-Z0-9]{17}/.test(line)).slice(0,8)}))}));
   }
   if(!candidates.length)throw manual('Kein Motoröl mit bestätigter Herstellerfreigabe, Viskosität und Gebindegrösse gefunden.');
   const {rank,...oil}=candidates[0];return oil;
