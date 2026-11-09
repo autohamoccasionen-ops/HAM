@@ -362,6 +362,10 @@ async function selectCategoryByObservedChange(page, row, label, desired = true) 
 }
 
 async function clickCategory(page, name, explicitLabel, desired = true) {
+  // Quick Click becomes active before its async category controls arrive.
+  // Wait for the actual controls before counting labels; a loading page is
+  // not evidence that the requested category is absent or ambiguous.
+  await page.locator('p-checkbox').filter({ visible: true }).first().waitFor({ timeout: 30000 });
   const panel = page.getByRole('tabpanel', { name: 'Quick Click', exact: true });
   const scope = await panel.count() === 1 ? panel : page;
   // The same name also appears in the navigation tree. Its DIV is not the
@@ -868,3 +872,4 @@ export async function readQuote(input, credentials) {
     await browser.close().catch(() => {});
   }
 }
+
