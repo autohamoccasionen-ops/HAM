@@ -9,7 +9,7 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Forty-one automated tests cover calculations, HTTP behavior and consent
+Forty-three automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
 
@@ -72,6 +72,8 @@ proxy; do not call this API with the secret directly from browser code.
   approvals use a guarded catalogue search requiring the same approval, viscosity,
   one-litre packaging and current retail price. This fallback still requires
   end-to-end verification on additional vehicle specifications; no oil is universal.
+- VIN Quick View identifies the linked HaynesPro vehicle by its explicit, unique
+  TecDoc number; no catalogue identifier is inferred from the VIN or history.
 - Filter and drain-plug selections require a VIN badge and a listed seal.
   Packaging multiples and unpriced items are rejected.
 - Each lookup starts a new, in-memory browser context. No session files,
