@@ -9,9 +9,14 @@ Enable automatic quotations only after a complete hosted supplier lookup has
 been verified for the supported scope. A healthy `/healthz` response confirms
 the HTTP process alone. The authenticated status endpoint reports whether this
 process has completed a quotation and the timestamp of its latest success.
-Thirty-seven automated tests cover calculations, HTTP behavior and consent
+Thirty-eight automated tests cover calculations, HTTP behavior and consent
 safeguards; they do not prove ongoing supplier availability. Never publish real
 vehicle data, credentials or private operational diagnostics in this repository.
+
+Hosted checks also cover Motoröl-Service with front-axle discs and pads,
+and Motoröl-Service with a fuel filter plus the brake-fluid and climate-
+disinfection packages. Itemized prices and VAT-inclusive cart totals matched.
+These checks do not certify every vehicle or every additional service.
 
 ## Runtime configuration
 
@@ -51,6 +56,9 @@ proxy; do not call this API with the secret directly from browser code.
   spark plugs, belts and wipers. Each requires its own complete parts and labour evidence.
   The presence of an adapter is not proof of end-to-end supplier verification.
   Unpriced, ambiguous, unlisted or incomplete selections require manual review.
+  An explicit supplier no-parts result is also manual review; it never means
+  that a different vehicle's part may be substituted. Distinct cabin-filter
+  installation positions are not interchangeable alternatives.
   This is not an all-services / all-VIN release.
 - Package amounts include their labour. They are itemized once, with VAT and
   cash rounding applied only after the complete net subtotal is calculated.
@@ -77,3 +85,4 @@ do not start a browser or access any supplier account. Perform a separate real h
 end-to-end test before enabling a new vehicle specification or website flow.
 
 Use the same pinned version of Playwright for npm and the official Docker image.
+

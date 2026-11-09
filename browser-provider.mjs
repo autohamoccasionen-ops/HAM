@@ -243,6 +243,11 @@ function snapshotArticle(page,row){
 
 const matchingSnapshot=(rows,row)=>rows.filter(x=>row.partNumber?x.partNumber===row.partNumber:x.id===row.id);
 
+export function requestedProductsPresent(cards,components){
+  return components.length>0&&components.every(component=>
+    cards.some(card=>new RegExp(component.product,'i').test(card.text)));
+}
+
 async function closeHaynesLaunchDialog(page) {
   const dialogs = page.getByRole('dialog').filter({ visible: true });
   for (const dialog of await dialogs.all()) {
@@ -467,7 +472,9 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const components=serviceComponents(groupNames);
     const entries=[];
     let cards=await catalogueSnapshot(page);
-    for(let attempt=0;attempt<60&&!cards.some(row=>components.some(c=>new RegExp(c.product,'i').test(row.text)));attempt++){
+    for(let attempt=0;attempt<60&&!requestedProductsPresent(cards,components);attempt++){
+      if(await page.getByText('Es können keine Teile gefunden werden. Bitte prüfen Sie Ihre Eingaben.',{exact:true}).isVisible())
+        throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
       await page.waitForTimeout(500);cards=await catalogueSnapshot(page);
     }
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
@@ -477,14 +484,8 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
         noData:/keine Daten|nicht gefunden|0 Artikel|0 Treffer/i.test(document.body.innerText),
         sessionExpired:/Sitzung.*abgelaufen/i.test(document.body.innerText),
         vehicleVisible:Array.from(document.querySelectorAll('button')).some(n=>n.innerText.trim()==='Fahrzeug ändern'),
-        productContainers:Array.from(document.querySelectorAll('[class]')).filter(n=>/article|product|part-list/i.test(String(n.className))).slice(0,25).map(n=>({tag:n.tagName,css:String(n.className).slice(0,180),children:n.children.length})),
         loading:!!document.querySelector('[aria-busy="true"],p-progressspinner'),
         loginForm:!!document.querySelector('input[type="password"]')}))}));
-    const grouped=page.locator('.new-article-group-context');
-    if(!cards.length&&await grouped.count()===1)console.info(JSON.stringify({component:'supplier-extra-group',category,
-      text:(await grouped.innerText()).replace(/[A-HJ-NPR-Z0-9]{17}/g,'[vehicle]').replace(/\S+@\S+/g,'[account]').slice(0,3000),
-      controls:await grouped.locator('button,a,select').evaluateAll(nodes=>nodes.map(n=>({tag:n.tagName,
-        text:(n.innerText||'').trim().slice(0,120),role:n.getAttribute('role')})).slice(0,25))}));
     console.info(JSON.stringify({component:'supplier-extra-snapshot-criteria',category,cards:cards.slice(0,30).map(row=>({
       vin:/\bVIN\b/.test(row.text),product:components.some(c=>new RegExp(c.product,'i').test(row.text)),
       articleNumber:!!row.partNumber,quantity:Number(row.text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,
@@ -596,6 +597,7 @@ export async function readQuote(input, credentials) {
   const reportFailure = error => console.warn(JSON.stringify({ component: 'supplier-lookup', stage,
     failure: error instanceof QuoteError ? error.code : error?.name === 'TimeoutError' ? 'TIMEOUT' : 'BROWSER_ERROR',
     reviewReason: { 'Teilekategorie nicht eindeutig.': 'CATEGORY_LABEL_AMBIGUOUS',
+      'Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.':'SOURCE_NO_PARTS',
       'Teileauswahl muss geprüft werden.': 'CATEGORY_CONTROL_UNCONFIRMED',
       'Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.': 'MATERIALS_UNCONFIRMED',
       'Artikelnummer nicht eindeutig gelesen.': 'PART_NUMBER_UNCONFIRMED',
