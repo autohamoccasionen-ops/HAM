@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin, vehicleIdFromUrl, tecdocIdFromText } from '../browser-provider.mjs';
+import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin, lookupVin, vehicleIdFromUrl, tecdocIdFromText } from '../browser-provider.mjs';
 
 test('a VIN view without a route identifier requires an explicit unique HaynesPro identifier',()=>{
   assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/identification'),null);
@@ -92,3 +92,26 @@ test('oil package validation distinguishes 1 litre from 1.5 and 5 litres and rej
   assert.equal(oilPackageConfirmed('0W-30\nInhalt [Liter]: 1'), false);
 });
 
+
+
+test('a transient VIN message gets one normal page reload and requires the same VIN afterwards',async()=>{
+ let submits=0,reloads=0,confirmed=0;
+ const unavailable={isVisible:async()=>submits===1};
+ const vehicle={or:()=>({first:()=>({waitFor:async()=>{}})})};
+ const page={getByPlaceholder:()=>({fill:async v=>assert.equal(v,'W0000000000000000'),press:async()=>submits++}),
+   getByRole:(role)=>role==='heading'?{waitFor:async()=>{}}:vehicle,
+   getByText:text=>text==='VIN-Suche vorübergehend nicht verfügbar'?unavailable:{first:()=>({waitFor:async()=>confirmed++})},
+   reload:async()=>reloads++,locator:()=>({innerText:async()=> 'Fahrzeugsuche'})};
+ await lookupVin(page,'W0000000000000000');
+ assert.deepEqual({submits,reloads,confirmed},{submits:2,reloads:1,confirmed:1});
+});
+
+test('a persistent VIN outage stops after one reload rather than looping',async()=>{
+ let submits=0,reloads=0;
+ const page={getByPlaceholder:()=>({fill:async()=>{},press:async()=>submits++}),
+   getByRole:role=>role==='heading'?{waitFor:async()=>{}}:{or:()=>({first:()=>({waitFor:async()=>{}})})},
+   getByText:text=>text==='VIN-Suche vorübergehend nicht verfügbar'?{isVisible:async()=>true}:{first:()=>({waitFor:async()=>{throw Error('must not confirm')}})},
+   reload:async()=>reloads++,locator:()=>({innerText:async()=> 'Fahrzeugsuche'})};
+ await assert.rejects(()=>lookupVin(page,'W0000000000000000'),{code:'SOURCE_UNAVAILABLE'});
+ assert.deepEqual({submits,reloads},{submits:2,reloads:1});
+});
