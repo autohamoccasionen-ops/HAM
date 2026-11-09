@@ -1,6 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateRequest, retailPriceCents, parseOilCapacity, parseOilHours, calculateQuote } from '../quote.mjs';
+import {vehicleServices} from '../vehicle-services.mjs';
+
+test('wiper quote uses configured fifteen minutes and rejects another labour charge', () => {
+  const name='Scheibenwischerblatt hinten';
+  const input={...request,extras:[name]};
+  const source={...verified,materials:[...verified.materials,{kind:'rear-wiper',partNumber:'TEST-WIPER',description:'Test rear wiper',quantity:1,unitNetCents:2000,priceBasis:'retail-ex-vat'}],
+    extraLabour:[{service:name,...vehicleServices[name].garageLabour}]};
+  const quote=calculateQuote(input,source);
+  assert.equal(quote.serviceLines[0].hours,0.25);
+  assert.equal(quote.serviceLines[0].labourNetCents,3750);
+  assert.equal(quote.serviceLines[0].netCents,5750);
+  assert.throws(()=>calculateQuote(input,{...source,extraLabour:[{...source.extraLabour[0],hours:0.5}]}),{code:'LABOUR_UNCONFIRMED'});
+  assert.throws(()=>calculateQuote(input,{...source,materials:verified.materials}),{code:'MATERIAL_UNCONFIRMED'});
+});
 
 // Synthetic vehicle identifier; numerical fixture validates the calculation only.
 // Tests only: never used as a production quote, cached price or VIN fallback.
@@ -93,3 +107,4 @@ test('vehicle-specific brake materials and labour are required and charged once'
  assert.throws(()=>calculateQuote(input,{...source,extraLabour:[]}),{code:'LABOUR_UNCONFIRMED'});
  assert.throws(()=>validateRequest({...input,extras:[service,'Bremsbeläge Vorderachse erneuern']}),{code:'INVALID_REQUEST'});
 });
+
