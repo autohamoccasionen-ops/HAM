@@ -418,7 +418,9 @@ export async function chooseMaterials(page, kinds=['filter','drain-plug']) {
         vinBadge: /\bVIN\b/.test(text), filterName: /Ölfilter/.test(text), plugName: /Verschlussschraube, Ölwanne/.test(text),
         seal: /mit Dichtring|mit Dichtung/.test(text), preferredBrand: priorities.find(brand => text.includes(brand)) || null,
         retailLabel: /UVPE:\s*\d/.test(text), unpriced: /Auf Anfrage/.test(text),
-        quantity: Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1]) || null
+        quantity: Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1]) || null,
+        article: text.match(/Artikel Nr\.:\s*([^\n]+)/)?.[1]?.trim() || null,
+        technical: text.split('\n').map(x=>x.trim()).filter(x=>/^(?:Dichtring, Ölablassschraube|Verschlussschraube, Ölwanne|Ergänzungsartikel|Gewindemaß|Gewindelänge|Innendurchmesser|Außendurchmesser|Dicke|Material|mit Dichtring|ohne Dichtring|benötigte Stückzahl)/i.test(x)).filter(x=>!/@|https?:|[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,20)
       })) }));
       throw manual('Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.');
     }
