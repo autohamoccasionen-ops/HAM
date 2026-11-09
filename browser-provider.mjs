@@ -995,7 +995,7 @@ export async function readQuote(input, credentials) {
     if(stage==='vehicle-route-confirmation'){
       const pathname=new URL(page.url()).pathname;
       const known=new Set(['dch-ax','vehicle','home','search','articles','article-list','parts']);
-      const pathShape=pathname.split('/').map(part=>known.has(part)?part:part.replace(/[0-9]/g,'#').replace(/[^VM#]/gi,'x')).join('/').slice(0,200);
+      const pathShape=pathname.split('/').map(part=>known.has(part)||/^[a-z-]{1,24}$/.test(part)?part:part.replace(/[0-9]/g,'#').replace(/[^VM#]/gi,'x')).join('/').slice(0,200);
       console.warn(JSON.stringify({component:'supplier-vehicle-route',pathShape,
         headings:await page.locator('h1,h2,h3,h4,[role="dialog"] [role="heading"]').evaluateAll(nodes=>nodes
           .map(n=>(n.innerText||'').trim()).filter(t=>t.length<100&&/Fahrzeug|VIN|Suchergebnis|Auswahl/i.test(t)&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)).slice(0,12))}));
