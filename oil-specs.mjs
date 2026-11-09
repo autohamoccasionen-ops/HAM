@@ -4,7 +4,10 @@ export function engineOilSpecification(text){
   // cells/lines without repeating "Motoröl" on that row. Keep that confirmed
   // mapping valid; never infer this approval from viscosity alone.
   if(/SAE 0W-20\s+MB 229\.71/.test(String(text)))return {viscosity:'0W20',approval:'MB 229.71',query:'229.71'};
-  for(const line of String(text).split('\n')){
+  // A preferred specification can occupy separate cells/lines in HaynesPro.
+  // Join only an explicitly labelled engine-oil block, never other fluids.
+  const rows=String(text).replace(/Motor(?:en)?öl\s*\((?:Bevorzugte|Alternative) Schmiermittelspezifikation\)\s*\n\s*SAE\s+([^\n]+)\n\s*([^\n]+)/gi, 'Motoröl SAE $1 $2');
+  for(const line of rows.split('\n')){
     const match=line.trim().match(/^Motor(?:en)?öl\s+SAE\s+(\d{1,2}W[ -]?\d{2})\s+(.+?)(?:\s+(?:Alle Temperaturen|Über\s|Unter\s|Von\s|Bis\s)|$)/i);
     if(!match)continue;
     const approval=match[2].trim();
@@ -27,3 +30,4 @@ export function approvedOilProduct(text,spec){
   const declarations=[...String(text).matchAll(/(?:^|\n)\s*Herstellerfreigabe(?:n)?\s*:\s*([^\n]+)/gi)];
   return declarations.some(x=>pattern.test(x[1]));
 }
+
