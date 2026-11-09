@@ -485,6 +485,9 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
         await clickCategory(page,category,(await labels.all())[indices[0].index]);
       }
     }else await clickCategory(page,category);
+    console.info(JSON.stringify({component:'supplier-category-selection',category,
+      selected:await page.locator('p-checkbox').evaluateAll(nodes=>nodes.filter(n=>n.querySelector('input[type="checkbox"]')?.checked)
+        .map(n=>(n.innerText||'').trim()).filter(t=>t&&t.length<80&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)))}));
     await clickWithCookieConsent(page,page.getByRole('button',{name:'Artikel anzeigen',exact:true}));
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'articles-opened',category}));
     const noParts=page.getByText('Es können keine Teile gefunden werden. Bitte prüfen Sie Ihre Eingaben.',{exact:true});
@@ -492,6 +495,11 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     await priced.or(noParts).first().waitFor();
     if(await noParts.isVisible()){
       console.info(JSON.stringify({component:'supplier-extra-no-results',category}));
+      console.info(JSON.stringify({component:'supplier-catalogue-navigation',category,
+        controls:await page.locator('a,button,[role="tab"],[role="treeitem"]').evaluateAll(nodes=>[...new Set(nodes
+          .filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height})
+          .map(n=>(n.innerText||'').trim()).filter(t=>t.length<90&&!/[A-HJ-NPR-Z0-9]{17}|@|https?:/.test(t)
+            &&/Teilebaum|Katalog|Artikel|Filter|Batterie|Scheiben|Wischer|Quick Click|Wartung/i.test(t)))].slice(0,70))}));
       throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
     }
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
