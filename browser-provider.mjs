@@ -773,7 +773,23 @@ async function graphPosition(page,name) {
   const rows=page.getByRole('row').filter({has:page.getByRole('cell',{name,exact:true})});
   await rows.first().waitFor();
   if(await rows.count()!==1)throw manual('Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.');
-  await rows.getByRole('checkbox').check();
+  const checkbox=rows.getByRole('checkbox');
+  const refinements=page.getByRole('dialog',{name:'Filter',exact:true});
+  const closeRefinements=async()=>{
+    if(!await refinements.isVisible())return false;
+    // Resetting optional catalogue refinements can reopen their chooser.
+    // Cancel that chooser, retaining the unfiltered VIN drawing underneath.
+    await clickWithCookieConsent(page,refinements.getByRole('button',{name:'Abbrechen',exact:true}));
+    await refinements.waitFor({state:'hidden'});
+    console.info(JSON.stringify({component:'supplier-progress',stage:'graph-optional-filter-closed'}));
+    return true;
+  };
+  await closeRefinements();
+  try{await checkbox.check({timeout:5000})}
+  catch(error){
+    if(!await closeRefinements())throw error;
+    await checkbox.check();
+  }
   const product=name==='Satz Ölfiltereinsatz'?/Ölfilter/:name==='Verschlussschraube'?/Verschlussschraube, Ölwanne/:/Luftfilter/;
   for(let attempt=0;attempt<100;attempt++) {
     const cards=await catalogueSnapshot(page);
