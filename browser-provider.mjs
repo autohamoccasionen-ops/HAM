@@ -371,8 +371,79 @@ export function materialCandidate(text, kind) {
     quantity: 1, unitNetCents: retailPriceCents(text), priceBasis: 'retail-ex-vat', brand };
 }
 
+function catalogueField(text, label) {
+  const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  return String(text).match(new RegExp('(?:^|\\n|\\|)\\s*'+escaped+'\\s*:\\s*([^\\n|]+)','i'))?.[1]?.trim()||null;
+}
+
+export function drainPlugRepairNumbers(text) {
+  if(!/\bVIN\b/.test(text)||!/Verschlussschraube, Ölwanne/.test(text)
+    ||!/ohne Dichtring/.test(text)||/Auf Anfrage|ABVERKAUFSARTIKEL|\d+ Stück = 1 Pack/i.test(text)
+    ||!catalogBrand(text,['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS']))return [];
+  const quantity=Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1]);
+  if(quantity!==1)return [];
+  const declared=catalogueField(text,'alternativer Reparatursatz');
+  if(!declared)return [];
+  const numbers=[...new Set(declared.split(/[,;]/).map(x=>x.trim()))];
+  if(numbers.length>3||numbers.some(x=>!/^[A-Z0-9][A-Z0-9./-]{1,59}$/i.test(x)))return [];
+  return numbers.filter(x=>x!==articleNumber(text));
+}
+
+export function replacementDrainPlug(original, alternative, number) {
+  if(!drainPlugRepairNumbers(original).includes(number))return null;
+  const brands=['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS'];
+  const brand=catalogBrand(original,brands);
+  if(catalogBrand(alternative,brands)!==brand||articleNumber(alternative)!==number
+    ||!/Verschlussschraube, Ölwanne/.test(alternative)||!/mit Dichtring|mit Dichtung/.test(alternative)
+    ||/ohne Dichtring|Auf Anfrage|ABVERKAUFSARTIKEL|\d+ Stück = 1 Pack/i.test(alternative))return null;
+  const normalize=value=>value?.toUpperCase().replace(/\s/g,'').replace(/,/g,'.');
+  const thread=normalize(catalogueField(original,'Gewindemaß'));
+  if(!thread||!/^M\d+(?:\.\d+)?X\d+(?:\.\d+)?(?:X\d+(?:\.\d+)?)?$/.test(thread)
+    ||normalize(catalogueField(alternative,'Gewindemaß'))!==thread)return null;
+  const quantity=alternative.match(/benötigte Stückzahl:\s*(\d+)/);
+  if(quantity&&Number(quantity[1])!==1)return null;
+  // A supplier-declared alternative kit inherits this exact VIN-confirmed
+  // plug's fitment only with the same manufacturer and complete thread size.
+  // A generic catalogue search result alone never establishes compatibility.
+  return {kind:'drain-plug',partNumber:number,description:brand+' Ölablassschraube mit Dichtring',
+    quantity:1,unitNetCents:retailPriceCents(alternative),priceBasis:'retail-ex-vat',brand};
+}
+
+async function chooseDrainPlugRepair(page,entries) {
+  const sources=entries.filter(row=>drainPlugRepairNumbers(row.text).length);
+  if(sources.length!==1)return null;
+  // Full-text navigation replaces this tab's catalogue route. Graphical
+  // drawings need their own return path before this fallback can be used.
+  if(new URL(page.url()).pathname==='/dch-ax/yqservice/graphic-search')return null;
+  const original=sources[0].text;
+  const numbers=drainPlugRepairNumbers(original);
+  console.info(JSON.stringify({component:'supplier-progress',stage:'drain-repair-kit-search',declaredAlternatives:numbers.length}));
+  for(const number of numbers) {
+    const box=page.getByRole('textbox',{name:'Volltextsuche: Artikel, Fahrzeuge, VIN, etc',exact:true});
+    await box.fill(number);await box.press('Enter');
+    await page.getByText(`Suchergebnisse "${number}"`,{exact:true}).waitFor();
+    let row;
+    for(let attempt=0;attempt<60;attempt++) {
+      const matches=(await catalogueSnapshot(page)).filter(x=>x.partNumber===number);
+      if(matches.length===1&&/Verschlussschraube, Ölwanne/.test(matches[0].text)){row=matches[0];break;}
+      await page.waitForTimeout(250);
+    }
+    if(!row)continue;
+    const article=snapshotArticle(page,row);
+    const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
+    if(await details.count()===1)await clickWithCookieConsent(page,details);
+    for(let attempt=0;attempt<30;attempt++) {
+      const text=await readCatalogCard(article);
+      let part;try{part=replacementDrainPlug(original,text,number)}catch{}
+      if(part){console.info(JSON.stringify({component:'supplier-progress',stage:'drain-repair-kit-confirmed'}));return part;}
+      await page.waitForTimeout(200);
+    }
+  }
+  return null;
+}
+
 export async function chooseMaterials(page, kinds=['filter','drain-plug']) {
-  // Price responses can arrive before names, brands and VIN badges. Do not
+  // Price responses can arrive before names, brands and VIN badges.
   // Wait for card identity and price, then open its details to confirm the
   // seal. Requiring a seal before opening details can never complete when
   // the supplier keeps that information in a collapsed panel.
@@ -413,6 +484,7 @@ export async function chooseMaterials(page, kinds=['filter','drain-plug']) {
         if (candidate) { selected = candidate; break brandSearch; }
       }
     }
+    if(!selected&&kind==='drain-plug')selected=await chooseDrainPlugRepair(page,entries);
     if (!selected) {
       console.warn(JSON.stringify({ component: 'supplier-material-criteria', kind, cards: entries.slice(0, 16).map(({ text }) => ({
         vinBadge: /\bVIN\b/.test(text), filterName: /Ölfilter/.test(text), plugName: /Verschlussschraube, Ölwanne/.test(text),
