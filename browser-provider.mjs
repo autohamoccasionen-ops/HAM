@@ -868,15 +868,23 @@ async function chooseGraphMaterials(page,input) {
   return parts;
 }
 
-async function chooseApprovedEngineOil(page,spec){
+export async function chooseApprovedEngineOil(page,spec){
   const grade=spec.viscosity.replace(/W(\d)/,'W-$1');
   await search(page,spec.query+' '+grade);
   const candidates=[];
-  for(const card of await catalogueCards(page)){
-    if(!await card.isVisible())continue;
-    const article=await completeArticleContainer(card);
+  let rows=[];
+  const matchingGrade=text=>[...text.matchAll(/\b(\d{1,2}W)[ -]?(\d{2})\b/gi)]
+    .some(x=>(x[1]+x[2]).toUpperCase()===spec.viscosity);
+  for(let attempt=0;attempt<60;attempt++){
+    rows=await catalogueSnapshot(page);
+    if(rows.some(row=>row.partNumber&&/Motor(?:en)?öl/i.test(row.text)&&matchingGrade(row.text)
+      &&/UVPE:\s*[\d’'.,]+\s*CHF/.test(row.text)))break;
+    await page.waitForTimeout(250);
+  }
+  for(const row of rows){
+    const article=snapshotArticle(page,row);
     let text=await readCatalogCard(article);
-    if(!/Motor(?:en)?öl/i.test(text))continue;
+    if(!/Motor(?:en)?öl/i.test(text)||!matchingGrade(text))continue;
     if(!approvedOilProduct(text,spec)){
       const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
       if(await details.count()===1){await clickWithCookieConsent(page,details);await article.getByText(/Herstellerfreigabe/).first().waitFor({timeout:5000}).catch(()=>{});text=await readCatalogCard(article);}
