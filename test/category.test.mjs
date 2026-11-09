@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin, vehicleIdFromUrl } from '../browser-provider.mjs';
+import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin, vehicleIdFromUrl, isQuickViewVehicleUrl, tecdocIdFromText } from '../browser-provider.mjs';
+
+test('VIN Quick View is recognized without inventing a catalogue identifier',()=>{
+  assert.equal(isQuickViewVehicleUrl('https://supplier.test/dch-ax/quickview/identification'),true);
+  assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/quickview/identification'),null);
+  assert.equal(isQuickViewVehicleUrl('https://supplier.test/dch-ax/home?next=/quickview/identification'),false);
+  assert.equal(tecdocIdFromText('Synthetic vehicle\nTecDoc-Nummer: 12345\nArbeitswerte'),'12345');
+  assert.equal(tecdocIdFromText('TecDoc-Nummer: 12345\nTecDoc-Nummer: 99999'),null);
+  assert.equal(tecdocIdFromText('Synthetic vehicle without TecDoc identifier'),null);
+});
 
 test('only an actual vehicle route supplies the catalogue vehicle identifier',()=>{
   assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/vehicle/V123M456'), '123');
