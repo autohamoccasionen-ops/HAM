@@ -6,6 +6,9 @@ const brake = (axle, discs) => ({
     {kind:axle+'-pads',name:'Bremsbeläge '+(axle==='front'?'Vorderachse':'Hinterachse'),product:'(?:^|\\n)\\s*Bremsbel(?:agsatz|ag|äge)\\b',axle}],
   operations:[discs?`Beide Bremsscheiben erneuern (${axle==='front'?'Vorderachse':'Hinterachse'})`:`Bremsbeläge erneuern (${axle==='front'?'Vorderachse':'Hinterachse'})`]
 });
+// Wiper labour is the garage's explicitly configured 15-minute charge;
+// the replacement parts still require the live VIN-specific catalogue lookup.
+const wiperLabour = position => ({hours:0.25,operation:'HAM-WIPER-'+position});
 export const vehicleServices=Object.freeze({
   'Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern':brake('front',true),
   'Bremsbeläge Vorderachse erneuern':brake('front',false),
@@ -18,8 +21,8 @@ export const vehicleServices=Object.freeze({
   'Zündkerzen wechseln':{category:'Zündkerze',components:[{kind:'spark-plugs',name:'Zündkerzen',product:'Zündkerze',brands:['NGK','DENSO','BOSCH']}],operations:['Zündkerzen erneuern','Alle Zündkerzen erneuern','Zündkerzen erneuern (alle)'],groups:['Zündung','Zündanlage']},
   'Keilrippenriemen-Wechsel':{category:'Keilrippenriemen',components:[{kind:'auxiliary-belt',name:'Keilrippenriemen',product:'\\bKeilrippenriemen\\b(?!-Kit)',brands:['CONTITECH','GATES','DAYCO','INA'],requiredQuantity:1}],operations:['Keilrippenriemen erneuern','Nebenaggregateriemen erneuern','Antriebsriemen erneuern'],groups:['Motor','Riementrieb','Riemenantrieb']},
   'Zahnriemen-Wechsel':{category:'Zahnriemensatz',components:[{kind:'timing-belt-kit',name:'Zahnriemensatz',product:'Zahnriemensatz|Zahnriemen-Kit',brands:['CONTITECH','INA','GATES','DAYCO'],requiredQuantity:1,rejectText:'mit (?:Wasser|Kühlmittel)pumpe'}],operations:['Zahnriemen erneuern','Zahnriemensatz erneuern'],groups:['Motor','Riementrieb','Zahnriemen']},
-  'Scheibenwischerblätter vorne wechseln':{category:'Wischerblätter',components:[{kind:'front-wiper-set',name:'Scheibenwischerblätter vorne',product:'Wischblatt|Wischerblatt',axle:'front',brands:['BOSCH','VALEO','SWF','DENSO'],requiredQuantity:1,requireText:'Wischblattsatz|Menge:\\s*2|Länge 1[\\s\\S]{0,100}Länge 2'}],operations:['Wischerblätter erneuern (Windschutzscheibe)','Beide Wischerblätter erneuern (vorne)','Wischerblätter vorne erneuern'],groups:['Scheibenwaschanlage','Wischerblatt']},
-  'Scheibenwischerblatt hinten':{category:'Wischerblätter',components:[{kind:'rear-wiper',name:'Scheibenwischerblatt hinten',product:'Wischblatt|Wischerblatt',axle:'rear',brands:['BOSCH','VALEO','SWF','DENSO'],requiredQuantity:1}],operations:['Wischerblatt erneuern (Heckscheibe)','Wischerblatt hinten erneuern'],groups:['Scheibenwaschanlage','Wischerblatt']}
+  'Scheibenwischerblätter vorne wechseln':{garageLabour:wiperLabour('FRONT'),category:'Wischerblätter',components:[{kind:'front-wiper-set',name:'Scheibenwischerblätter vorne',product:'Wischblatt|Wischerblatt',axle:'front',brands:['BOSCH','VALEO','SWF','DENSO'],requiredQuantity:1,requireText:'Wischblattsatz|Menge:\\s*2|Länge 1[\\s\\S]{0,100}Länge 2'}],operations:['Wischerblätter erneuern (Windschutzscheibe)','Beide Wischerblätter erneuern (vorne)','Wischerblätter vorne erneuern'],groups:['Scheibenwaschanlage','Wischerblatt']},
+  'Scheibenwischerblatt hinten':{garageLabour:wiperLabour('REAR'),category:'Wischerblätter',components:[{kind:'rear-wiper',name:'Scheibenwischerblatt hinten',product:'Wischblatt|Wischerblatt',axle:'rear',brands:['BOSCH','VALEO','SWF','DENSO'],requiredQuantity:1}],operations:['Wischerblatt erneuern (Heckscheibe)','Wischerblatt hinten erneuern'],groups:['Scheibenwaschanlage','Wischerblatt']}
 });
 export const serviceComponents=names=>names.flatMap(name=>vehicleServices[name]?.components||[]);
 export const brakeBrands=['ATE','BREMBO','TRW','TEXTAR','BOSCH','ZIMMERMANN','JURID','FERODO','PAGID','DELPHI','BENDIX','HELLA PAGID','HELLA','METELLI','MEYLE','REMSA','ROADHOUSE','A.B.S.','LPR','CIFAM','ICER','FEBI BILSTEIN'];
