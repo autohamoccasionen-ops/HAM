@@ -24,3 +24,13 @@ test('a multiline preferred engine specification stays separate from alternative
  assert.deepEqual(engineOilSpecification(text),{viscosity:'0W30',approval:'BMW Longlife-12 FE',query:'BMW Longlife-12 FE'});
  assert.equal(engineOilSpecification('Automatikgetriebeöl\nSAE 0W-30\nBMW Longlife-12 FE'),null);
 });
+
+test('unlabelled multiline engine lubricant rows retain their exact grade and manufacturer approval',()=>{
+ const text='Motor\nMotoröl\nSAE 0W-30\nMB 229.5\nAlle Temperaturen\nMotoröl\nSAE 0W-30\nMB 229.3\nAlle Temperaturen';
+ const spec=engineOilSpecification(text);
+ assert.deepEqual(spec,{viscosity:'0W30',approval:'MB 229.5',query:'229.5'});
+ assert.equal(approvedOilProduct('Motoröl 0W-30\nInhalt [Liter]: 1\nHerstellerfreigabe: MB 229.5',spec),true);
+ assert.equal(approvedOilProduct('Motoröl 0W-30\nInhalt [Liter]: 1\nHerstellerempfehlung: MB 229.5',spec),false);
+ assert.equal(engineOilSpecification('Automatikgetriebeöl\nSAE 0W-30\nMB 229.5'),null);
+ assert.equal(engineOilSpecification('Motoröl\nSAE 0W-30\nACEA C3'),null);
+});

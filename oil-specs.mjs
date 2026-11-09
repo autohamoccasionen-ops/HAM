@@ -6,7 +6,7 @@ export function engineOilSpecification(text){
   if(/SAE 0W-20\s+MB 229\.71/.test(String(text)))return {viscosity:'0W20',approval:'MB 229.71',query:'229.71'};
   // A preferred specification can occupy separate cells/lines in HaynesPro.
   // Join only an explicitly labelled engine-oil block, never other fluids.
-  const rows=String(text).replace(/Motor(?:en)?öl\s*\((?:Bevorzugte|Alternative) Schmiermittelspezifikation\)\s*\n\s*SAE\s+([^\n]+)\n\s*([^\n]+)/gi, 'Motoröl SAE $1 $2');
+  const rows=String(text).replace(/^Motor(?:en)?öl[ \t]*(?:\((?:Bevorzugte|Alternative) Schmiermittelspezifikation\)[ \t]*)?\r?\n[ \t]*SAE[ \t]+([^\n]+)\r?\n[ \t]*([^\n]+)/gmi, 'Motoröl SAE $1 $2');
   for(const line of rows.split('\n')){
     const match=line.trim().match(/^Motor(?:en)?öl\s+SAE\s+(\d{1,2}W[ -]?\d{2})\s+(.+?)(?:\s+(?:Alle Temperaturen|Über\s|Unter\s|Von\s|Bis\s)|$)/i);
     if(!match)continue;
