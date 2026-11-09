@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {vehicleServices,componentCandidate,operationEvidence,catalogBrand,uniqueOeVariant} from '../vehicle-services.mjs';
 import {retailPriceCents} from '../quote.mjs';
+test('spaced OE codes keep the complete operation identifier and its own hours',()=>{
+ const names=['Luftfilter erneuern'];
+ assert.deepEqual(operationEvidence('Luftfilter erneuern OE: 24 24 19 00\n+\n0,20',names),{operation:'24 24 19 00',hours:0.2});
+ assert.equal(operationEvidence('Luftfilter erneuern OE: 24 24 19 00\nBatterie\n0,70',names),null);
+});
 test('brake candidates require VIN fitment, exact axle and correct axle quantity',()=>{
  const c=vehicleServices['Bremsscheiben inkl. Bremsbeläge Vorderachse erneuern'].components[0];
  const text='Artikel Nr.: TEST-DISC\nATE\nBremsscheibe\nVIN\nEinbauseite: Vorderachse\nbenötigte Stückzahl: 2\nUVPE: 100.00 CHF 60.00 CHF exkl. MwSt.';
@@ -63,3 +68,4 @@ test('operation matching retains axle distinction and refuses ambiguous times',(
  assert.equal(operationEvidence(text.replace('Vorderachse','Hinterachse'),names),null);
  assert.equal(operationEvidence(text+'\n'+text.replace('1,00','1,50'),names),null);
 });
+
