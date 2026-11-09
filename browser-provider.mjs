@@ -649,7 +649,7 @@ export async function readQuote(input, credentials) {
     }
     if (stage === 'login-submit' && request.method() === 'POST' && new URL(request.url()).origin === DSTORE) loginRequestFailed = true;
   });
-  page.setDefaultTimeout(20000);
+  page.setDefaultTimeout(30000);
   context.setDefaultNavigationTimeout(30000);
   const deadline = setTimeout(() => context.close().catch(() => {}), 420000);
   try {
@@ -724,11 +724,11 @@ export async function readQuote(input, credentials) {
     stage = 'materials-open-list';
     await clickWithCookieConsent(page,page.getByRole('button', { name: 'Artikel anzeigen', exact: true }));
     stage = 'materials-wait-list';
-    await page.locator('[id^="part-detail-"]').first().waitFor();
+    await page.locator('[id^="part-detail-"]').first().waitFor({timeout:45000});
     // A price response arrives after the product cards. Wait for a displayed
     // retail price rather than copying an incomplete loading state.
     stage = 'materials-wait-retail-prices';
-    await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor();
+    await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor({timeout:45000});
     stage = 'materials-select';
     const parts = await chooseMaterials(page);
     if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames);parts.push(...extra.selected);page=extra.page;}
@@ -747,7 +747,7 @@ export async function readQuote(input, credentials) {
     await haynes.getByRole('heading', { name: 'Arbeitswerte', exact: true }).waitFor();
     const labourText = await visibleText(haynes);
     console.info(JSON.stringify({component:'supplier-service-operations', names:labourText.split('\n')
-      .map(x=>x.trim()).filter(x=>x.length<140&&/Filter|Brems|Zündker|Riemen|Batterie|Getriebe/.test(x)
+      .map(x=>x.trim()).filter(x=>x.length<140&&/Filter|Brems|Zündker|Riemen|Batterie|Getriebe|Wisch|Karosserie/.test(x)
         &&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,60)}));
     const labourHours = parseOilHours(labourText);
     const operation = labourText.match(/Motoröl und Filter wechseln\s*OE\s*:\s*([\w-]+)/)?.[1];
