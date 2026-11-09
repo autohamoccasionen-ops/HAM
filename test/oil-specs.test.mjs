@@ -17,3 +17,10 @@ test('an oil alternative requires its own explicit approval, viscosity and one-l
  assert.equal(approvedOilProduct(text.replace('1.000','5.000'),spec),false);
  assert.equal(approvedOilProduct(text.replace('5W-30','0W-20'),spec),false);
 });
+
+
+test('a multiline preferred engine specification stays separate from alternatives and other fluids',()=>{
+ const text='Motor ( außer Nordamerika)\nMotoröl (Bevorzugte Schmiermittelspezifikation)\nSAE 0W-30\nBMW Longlife-12 FE\nAlle Temperaturen\nMotoröl (Alternative Schmiermittelspezifikation)\nSAE 5W-30\nBMW Longlife-04\nAlle Temperaturen';
+ assert.deepEqual(engineOilSpecification(text),{viscosity:'0W30',approval:'BMW Longlife-12 FE',query:'BMW Longlife-12 FE'});
+ assert.equal(engineOilSpecification('Automatikgetriebeöl\nSAE 0W-30\nBMW Longlife-12 FE'),null);
+});
