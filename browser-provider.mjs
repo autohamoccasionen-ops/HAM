@@ -214,10 +214,12 @@ async function catalogueSnapshot(page){
     const cards=Array.from(document.querySelectorAll('[id^="part-detail-"]'));
     if(cards.length>80)return [{overflow:true}];
     return cards.flatMap(card=>{
-    const rect=card.getBoundingClientRect(),style=getComputedStyle(card);
-    if(!rect.width||!rect.height||style.visibility==='hidden'||style.visibility==='collapse'||style.display==='none')return [];
     let root=card,depth=0;
     while(depth<5&&root.parentElement&&root.parentElement.querySelectorAll('[id^="part-detail-"]').length===1){root=root.parentElement;depth++;}
+    // A collapsed details panel may have zero height while its complete
+    // product card (title, price and More Details control) is visible.
+    const rect=root.getBoundingClientRect(),style=getComputedStyle(root);
+    if(!rect.width||!rect.height||style.visibility==='hidden'||style.visibility==='collapse'||style.display==='none')return [];
     const text=root.innerText||'';
     if(text.length>24000)return [{overflow:true}];
     const labels=nodes=>Array.from(nodes).flatMap(n=>['alt','aria-label','title'].map(a=>n.getAttribute(a)).filter(Boolean));
@@ -469,6 +471,11 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
       await page.waitForTimeout(500);cards=await catalogueSnapshot(page);
     }
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
+    if(!cards.length)console.info(JSON.stringify({component:'supplier-extra-empty',category,
+      state:await page.evaluate(()=>({detailNodes:document.querySelectorAll('[id^="part-detail-"]').length,
+        noResults:/keine (?:passenden )?(?:Artikel|Ergebnisse|Produkte)|keine Treffer/i.test(document.body.innerText),
+        loading:!!document.querySelector('[aria-busy="true"],p-progressspinner'),
+        loginForm:!!document.querySelector('input[type="password"]')}))}));
     console.info(JSON.stringify({component:'supplier-extra-snapshot-criteria',category,cards:cards.slice(0,30).map(row=>({
       vin:/\bVIN\b/.test(row.text),product:components.some(c=>new RegExp(c.product,'i').test(row.text)),
       articleNumber:!!row.partNumber,quantity:Number(row.text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,
