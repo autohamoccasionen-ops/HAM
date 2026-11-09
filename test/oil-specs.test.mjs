@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {engineOilSpecification,approvedOilProduct} from '../oil-specs.mjs';
+test('VAG alternatives with explanatory notes retain their stated approval without assuming conditional oil is allowed',()=>{
+ const conditional='Longlife\nMotoröl (Wenn die Verwendung nicht zulässig ist, ist dies auf einem Aufkleber im Motorraum angegeben)\nSAE 0W-20\nVW 508 00';
+ assert.equal(engineOilSpecification(conditional),null);
+ const alternative='Motoröl (Alternative Schmiermittelspezifikation: Öl dieser Qualität kann verwendet werden, dies führt jedoch zu erhöhtem Abgasausstoß)\nSAE 0W-30\nVW 504 00';
+ assert.deepEqual(engineOilSpecification(conditional+'\n'+alternative),{viscosity:'0W30',approval:'VW 504 00',query:'50400'});
+ assert.equal(approvedOilProduct('Motoröl 0W-30\nInhalt [Liter]: 1\nHerstellerfreigabe: VW 504.00',engineOilSpecification(alternative)),true);
+});
 test('engine oil lookup derives manufacturer requirements from the vehicle record',()=>{
  assert.deepEqual(engineOilSpecification('Motoröl SAE 0W-20 MB 229.71 Alle Temperaturen'),{viscosity:'0W20',approval:'MB 229.71',query:'229.71'});
  assert.deepEqual(engineOilSpecification('Motor\nSAE 0W-20\nMB 229.71\nAlle Temperaturen'),{viscosity:'0W20',approval:'MB 229.71',query:'229.71'});
