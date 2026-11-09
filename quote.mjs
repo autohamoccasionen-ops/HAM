@@ -92,7 +92,8 @@ export function parseOilCapacity(text) {
 }
 
 export function parseOilHours(text) {
-  const match = String(text).match(/Motoröl und Filter wechseln\s*(?:OE\s*:\s*[\w-]+\s*\+?\s*)?(\d+[.,]\d{2})/i);
+  const matches = [...String(text).matchAll(/Motoröl und Filter wechseln\s*(?:OE\s*:\s*[\w-]+(?:[ \t]+[\w-]+)*?\s*\+?\s*)?(\d+[.,]\d{2})(?!\d)/gi)];
+  const match = matches.length === 1 ? matches[0] : null;
   if (!match) throw new QuoteError('LABOUR_UNCONFIRMED', 'Arbeitszeit für Motoröl und Filter nicht bestätigt.');
   const hours = Number(match[1].replace(',', '.'));
   if (hours <= 0 || hours > 3) throw new QuoteError('LABOUR_UNCONFIRMED', 'Arbeitszeit muss geprüft werden.');
