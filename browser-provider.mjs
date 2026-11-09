@@ -186,6 +186,24 @@ export function vehicleIdFromUrl(url){
   catch{return null}
 }
 
+export function isQuickViewVehicleUrl(url){
+  try{return new URL(String(url)).pathname.replace(/\/$/,'').endsWith('/quickview/identification')}
+  catch{return false}
+}
+
+export function tecdocIdFromText(text){
+  const ids=[...new Set([...String(text).matchAll(/TecDoc-Nummer:\s*(\d+)(?!\d)/g)].map(m=>m[1]))];
+  return ids.length===1&&Number(ids[0])>0?ids[0]:null;
+}
+
+async function openHaynesPage(context,page){
+  await clickWithCookieConsent(page,page.getByRole('link',{name:'Haynes Pro',exact:true}));
+  const popup=context.waitForEvent('page');
+  await clickWithCookieConsent(page,page.getByRole('button',{name:'Hier geht es zu HaynesPro',exact:true}));
+  const haynes=await popup;haynes.setDefaultTimeout(20000);
+  return haynes;
+}
+
 function articleNumber(text) {
   const match = text.match(/Artikel Nr\.:\s*([^\n]+)/);
   if (!match) throw manual('Artikelnummer nicht eindeutig gelesen.');
@@ -799,18 +817,30 @@ export async function readQuote(input, credentials) {
     // The vehicle header can render before the SPA updates its route. Wait
     // for the actual vehicle URL instead of rejecting the still-visible home
     // route; a vehicle route without a trailing slash is valid too.
-    await page.waitForURL(url=>vehicleIdFromUrl(url)!==null,{timeout:30000});
-    const vehicleId = vehicleIdFromUrl(page.url());
-    if (!vehicleId) throw manual('Fahrzeugzuordnung nicht bestätigt.');
+    await page.waitForURL(url=>vehicleIdFromUrl(url)!==null||isQuickViewVehicleUrl(url),{timeout:30000});
+    let vehicleId = vehicleIdFromUrl(page.url());
+    let preloadedHaynes=null;
     stage = 'vehicle-header-confirmation';
     let vehicle = '';
-    let vehicleRegion = page.getByRole('heading', { level: 3 }).first();
-    for (let depth = 0; depth < 4; depth++) {
+    let vehicleRegion = page.getByRole('button',{name:'Fahrzeug ändern',exact:true});
+    for (let depth = 0; depth < 6; depth++) {
       vehicleRegion = vehicleRegion.locator('..');
       const description = clean(await vehicleRegion.innerText());
-      if (description.includes(input.vin) && description.length <= 800) { vehicle = description; break; }
+      if (description.includes(input.vin) && description.length <= 1500) { vehicle = description; break; }
     }
     if (!vehicle) throw manual('Fahrzeugzuordnung nicht bestätigt.');
+    // VIN Quick View has no TecDoc number in its route. Obtain its explicit
+    // identifier from the linked HaynesPro vehicle instead of guessing a
+    // catalogue model or treating a history entry as a confirmed vehicle.
+    if(!vehicleId){
+      stage='quickview-haynes-identification';
+      preloadedHaynes=await openHaynesPage(context,page);
+      await preloadedHaynes.getByText(/TecDoc-Nummer:\s*\d+/).first().waitFor();
+      vehicleId=tecdocIdFromText(await visibleText(preloadedHaynes));
+      if(!vehicleId)throw manual('Fahrzeugzuordnung nicht bestätigt.');
+      await closeHaynesLaunchDialog(page);
+      console.info(JSON.stringify({component:'supplier-progress',stage:'quickview-vehicle-confirmed'}));
+    }
     const vehicleUrl=page.url();
     const vehicleExtraNames=(input.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'vehicle-confirmed' }));
@@ -835,11 +865,7 @@ export async function readQuote(input, credentials) {
     if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames,input.vin);parts.push(...extra.selected);page=extra.page;}
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
-    await clickWithCookieConsent(page,page.getByRole('link', { name: 'Haynes Pro', exact: true }));
-    const popup = context.waitForEvent('page');
-    await clickWithCookieConsent(page,page.getByRole('button', { name: 'Hier geht es zu HaynesPro', exact: true }));
-    const haynes = await popup;
-    haynes.setDefaultTimeout(20000);
+    const haynes = preloadedHaynes||await openHaynesPage(context,page);
     await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
     const haynesOverviewUrl=haynes.url();
     await closeHaynesLaunchDialog(page);
