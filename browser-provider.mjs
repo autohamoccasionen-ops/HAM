@@ -910,7 +910,10 @@ export async function readQuote(input, credentials) {
       'Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.':'EXTRA_PART_VARIANTS',
       'Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.':'EXTRA_PART_EVIDENCE_MISSING',
       'Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.':'EXTRA_LABOUR_UNCONFIRMED',
-      'Ölgebinde muss geprüft werden.': 'OIL_PACKAGE_UNCONFIRMED' }[error?.message] || null,
+      'Ölgebinde muss geprüft werden.': 'OIL_PACKAGE_UNCONFIRMED',
+      'Ölfüllmenge nicht eindeutig bestimmt.':'OIL_CAPACITY_AMBIGUOUS',
+      'Ölfüllmenge muss geprüft werden.':'OIL_CAPACITY_RANGE',
+      'Die benötigte Ölfreigabe muss individuell geprüft werden.':'OIL_APPROVAL_UNCONFIRMED' }[error?.message] || null,
     browserOperation:String(error?.message||'').match(/(?:locator|page|frame)\.(\w+):/)?.[1]||null,
     interaction: /locator\.click: Timeout/.test(error?.message || '') ? 'click'
       : /locator\.check: Timeout/.test(error?.message || '') ? 'check'
@@ -1124,7 +1127,7 @@ export async function readQuote(input, credentials) {
     // the heading's own section so table-of-contents text cannot truncate it.
     const engine=await engineHeading.locator('..').innerText();
     console.info(JSON.stringify({component:'supplier-engine-oil-specification',rows:engine.split('\n').map(x=>x.trim())
-      .filter(x=>x&&x.length<140&&!/@|https?:|[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,65)}));
+      .filter(x=>x&&x.length<140&&!/@|https?:|[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(-40)}));
     const litres = parseOilCapacity(engine);
     const oilSpecification=engineOilSpecification(engine);
     if(!oilSpecification)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
