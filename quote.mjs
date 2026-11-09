@@ -120,6 +120,12 @@ export function calculateQuote(request, source, now = new Date()) {
       netCents: Math.round(row.unitNetCents * row.quantity) };
   });
   const extraLabour=source.extraLabour||[];
+  for (const name of vehicleExtraNames) {
+    const fixed = vehicleServices[name].garageLabour;
+    const actual = extraLabour.find(row => row.service === name);
+    if (fixed && (!actual || actual.hours !== fixed.hours || actual.operation !== fixed.operation))
+      throw new QuoteError('LABOUR_UNCONFIRMED','Die konfigurierte Wischer-Arbeitszeit konnte nicht bestätigt werden.');
+  }
   if(extraLabour.length!==vehicleExtraNames.length||new Set(extraLabour.map(x=>x.service)).size!==vehicleExtraNames.length
     || !vehicleExtraNames.every(name=>extraLabour.some(x=>x.service===name&&x.operation&&Number.isFinite(x.hours)&&x.hours>0&&x.hours<=12))
     || new Set([source.labourOperation,...extraLabour.map(x=>x.operation)]).size!==1+extraLabour.length)
@@ -151,3 +157,4 @@ export function calculateQuote(request, source, now = new Date()) {
     roundingCents: totalCents - subtotalNetCents - vatCents, totalCents,
     source: source.source, retrievedAt: now.toISOString() };
 }
+
