@@ -1136,8 +1136,10 @@ export async function readQuote(input, credentials) {
     const country = haynes.locator('#selectFilterCountry');
     if (await country.count() === 1) await country.selectOption({ label: 'Schweiz' });
     const lubricants = await visibleText(haynes);
-    const engineHeading=haynes.getByRole('heading',{level:2,name:/^Motor(?:\s*\([^)]*\))?\s*$/}).filter({visible:true});
-    console.info(JSON.stringify({component:'supplier-engine-sections',matching:await engineHeading.count(),headings:await haynes.getByRole('heading').allTextContents()}));
+    let engineHeading=haynes.getByRole('heading',{level:2,name:/^Motor(?:\s*\([^)]*\))?\s*$/}).filter({visible:true});
+    // VAG tables group engine oil by maintenance schedule rather than Motor.
+    // Read the explicitly labelled Longlife engine-oil section when present.
+    if(await engineHeading.count()===0)engineHeading=haynes.getByRole('heading',{level:2,name:/^Longlife\s*$/i}).filter({visible:true});
     if(await engineHeading.count()!==1)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
     // The contents list repeats the Motor label before the actual data. Read
     // the heading's own section so table-of-contents text cannot truncate it.
