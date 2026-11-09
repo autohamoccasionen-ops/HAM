@@ -181,6 +181,41 @@ export async function waitForVin(page, vin) {
   await confirmed.waitFor({state:'visible',timeout:30000});
 }
 
+// A transient VIN message can be caused by an expired page state. Reload
+// once through the supplier's normal UI, then perform the same explicit lookup.
+// Authentication failures, challenges and other errors are never retried here.
+export async function lookupVin(page, vin) {
+  for(let attempt=0;attempt<2;attempt++) {
+    const box=page.getByPlaceholder('VIN bzw. Chassis-Nummer',{exact:true});
+    await box.fill(vin); await box.press('Enter');
+    try { await waitForVin(page,vin); return; }
+    catch(error) {
+      if(attempt || error.code!=='SOURCE_UNAVAILABLE'
+        || error.message!=='Die VIN-Suche des Datenanbieters ist vorübergehend nicht verfügbar.')throw error;
+      await page.reload({waitUntil:'domcontentloaded'});
+      await page.getByRole('heading',{name:'Fahrzeugsuche',exact:true}).waitFor();
+      await checkLogin(page);
+      console.info(JSON.stringify({component:'supplier-progress',stage:'vin-page-reloaded'}));
+    }
+  }
+}
+
+async function openHaynesByVin(context, vin) {
+  const entry=await context.newPage();
+  await entry.goto(DSTORE+'/dch-ax/home',{waitUntil:'domcontentloaded'});
+  await rejectVisibleCookieConsent(entry);
+  const popup=context.waitForEvent('page');
+  await clickWithCookieConsent(entry,entry.getByRole('link',{name:/Haynes Pro/}));
+  const haynes=await popup; haynes.setDefaultTimeout(20000);
+  await haynes.getByRole('link',{name:'Suche',exact:true}).click();
+  await haynes.getByRole('link',{name:'FIN',exact:true}).click();
+  const search=haynes.getByRole('textbox',{name:'Suchen nach Eingabe (FIN)',exact:true});
+  await search.fill(''); await search.pressSequentially(vin,{delay:30});
+  await haynes.getByText('FIN: '+vin,{exact:true}).waitFor({timeout:45000});
+  await entry.close();
+  return haynes;
+}
+
 export function vehicleIdFromUrl(url){
   try{return new URL(String(url)).pathname.match(/\/vehicle\/V(\d+)M\d+(?:\/|$)/)?.[1]||null}
   catch{return null}
@@ -319,7 +354,7 @@ export function materialCandidate(text, kind) {
     quantity: 1, unitNetCents: retailPriceCents(text), priceBasis: 'retail-ex-vat', brand };
 }
 
-async function chooseMaterials(page) {
+async function chooseMaterials(page, kinds=['filter','drain-plug']) {
   const cards = await catalogueCards(page);
   const entries = [];
   for (const card of cards) {
@@ -329,7 +364,7 @@ async function chooseMaterials(page) {
     }
   }
   const selectedParts = [];
-  for (const kind of ['filter', 'drain-plug']) {
+  for (const kind of kinds) {
     const priorities = kind === 'filter' ? ['MAHLE', 'MANN-FILTER', 'BOSCH'] : ['ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS'];
     let selected;
     brandSearch: for (const brand of priorities) {
@@ -675,6 +710,104 @@ async function chooseRequestedMaterials(page,vehicleUrl,names,expectedVin){
   return {selected,page};
 }
 
+// The BMW VIN catalogue exposes OE drawings instead of Quick Click. Keep
+// the live VIN header, remove optional refinements, and require one exact OE
+// position before selecting its aftermarket results. No OE numbers are cached.
+async function openGraphDrawing(page,title,vin) {
+  if(!(await visibleText(page)).includes(vin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
+  const drawing=page.getByText(title,{exact:true}).filter({visible:true});
+  await drawing.waitFor();
+  if(await drawing.count()!==1)throw manual('Teilekategorie nicht eindeutig.');
+  await clickWithCookieConsent(page,drawing);
+  const table=page.getByRole('table');
+  const filters=page.getByRole('dialog',{name:'Filter',exact:true});
+  await table.or(filters).first().waitFor();
+  if(await filters.isVisible()) {
+    await filters.getByRole('combobox').first().waitFor();
+    // These are catalogue refinements, not confirmed vehicle equipment.
+    // They are cleared below before any OE position or product is accepted.
+    await clickWithCookieConsent(page,filters.getByRole('button',{name:'Bestätigen',exact:true}));
+    await filters.waitFor({state:'hidden'});
+    // D-Store saves the refinement after closing its dialog. Let that normal
+    // asynchronous save settle before opening the drawing a second time.
+    await page.waitForTimeout(1000);
+    await clickWithCookieConsent(page,drawing);
+    await table.waitFor();
+  }
+  const reset=page.getByRole('link',{name:'Filter zurücksetzen',exact:true});
+  if(await reset.isVisible()) {
+    await clickWithCookieConsent(page,reset);
+    await reset.waitFor({state:'hidden'});
+  }
+  if(!(await visibleText(page)).includes(vin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
+}
+
+async function graphPosition(page,name) {
+  const rows=page.getByRole('row').filter({has:page.getByRole('cell',{name,exact:true})});
+  await rows.first().waitFor();
+  if(await rows.count()!==1)throw manual('Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.');
+  await rows.getByRole('checkbox').check();
+  await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor({timeout:45000});
+}
+
+async function graphBack(page) {
+  await clickWithCookieConsent(page,page.getByRole('button',{name:'Zurück',exact:true}));
+  await page.getByRole('button',{name:'Fahrzeug ändern',exact:true}).waitFor();
+}
+
+async function graphAirFilter(page) {
+  const component=vehicleServices['Luftfilter-Wechsel'].components[0];
+  let cards=await catalogueSnapshot(page);
+  for(const row of cards){
+    if(!/\bVIN\b/.test(row.text)||!/Luftfilter/.test(row.text)||/Ersetzt durch:/i.test(row.text))continue;
+    const details=snapshotArticle(page,row).getByRole('button',{name:'Mehr Details',exact:true});
+    if(await details.isVisible())await clickWithCookieConsent(page,details);
+  }
+  // Extra details load asynchronously. Only explicit required quantities may
+  // become a quotation; stock counts and quantity-input defaults do not count.
+  for(let attempt=0;attempt<30;attempt++) {
+    cards=await catalogueSnapshot(page);
+    for(const brand of ['MANN-FILTER','MAHLE','BOSCH']) {
+      const candidates=cards.filter(row=>!/Ersetzt durch:/i.test(row.text))
+        .map(row=>componentCandidate(row.text,component,retailPriceCents)).filter(x=>x?.brand===brand);
+      if(candidates.length===1){const {brand,productLine,fitmentProfile,...part}=candidates[0];return part;}
+      if(candidates.length>1)throw manual('Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.');
+    }
+    await page.waitForTimeout(200);
+  }
+  throw manual('Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.');
+}
+
+async function chooseGraphMaterials(page,input) {
+  const names=(input.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
+  if(names.some(name=>name!=='Luftfilter-Wechsel'))throw manual('Diese Leistung im grafischen Katalog muss individuell geprüft werden.');
+  await clickWithCookieConsent(page,page.getByText('Ölfilter',{exact:true}).filter({visible:true}));
+  await openGraphDrawing(page,'Ölversorgung-Ölfilter',input.vin);
+  await graphPosition(page,'Satz Ölfiltereinsatz');
+  const parts=await chooseMaterials(page,['filter']);
+  console.info(JSON.stringify({component:'supplier-progress',stage:'graph-oil-filter-confirmed'}));
+  await graphBack(page);
+  await clickWithCookieConsent(page,page.getByRole('button',{name:'Motor',exact:true}));
+  const motor=page.getByRole('region',{name:'Motor',exact:true});
+  await clickWithCookieConsent(page,motor.getByText('Schmierung',{exact:true}));
+  await clickWithCookieConsent(page,motor.getByText('Ölwanne/-anbauteile',{exact:true}));
+  await openGraphDrawing(page,'Ölwanne/Ölmessvorrichtung',input.vin);
+  await graphPosition(page,'Verschlussschraube');
+  parts.push(...await chooseMaterials(page,['drain-plug']));
+  console.info(JSON.stringify({component:'supplier-progress',stage:'graph-drain-plug-confirmed'}));
+  if(names.includes('Luftfilter-Wechsel')) {
+    await graphBack(page);
+    const filter=page.getByRole('button',{name:'Filter',exact:true});
+    if(await filter.getAttribute('aria-expanded')!=='true')await clickWithCookieConsent(page,filter);
+    await clickWithCookieConsent(page,page.getByRole('region',{name:'Filter',exact:true}).getByText('Luftfilter',{exact:true}));
+    await openGraphDrawing(page,'Ansauggeräuschdämpfer/Filtereinsatz/HFM',input.vin);
+    await graphPosition(page,'Luftfiltereinsatz');
+    parts.push(await graphAirFilter(page));
+    console.info(JSON.stringify({component:'supplier-progress',stage:'graph-air-filter-confirmed'}));
+  }
+  return parts;
+}
+
 async function chooseApprovedEngineOil(page,spec){
   await search(page,spec.query);
   const candidates=[];
@@ -798,13 +931,8 @@ export async function readQuote(input, credentials) {
     await checkLogin(page);
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'login-confirmed' }));
     stage = 'vehicle-lookup';
-    const vin = page.getByPlaceholder('VIN bzw. Chassis-Nummer', { exact: true });
-    await vin.fill(input.vin);
-    await vin.press('Enter');
     stage = 'vehicle-vin-confirmation';
-    // The account can reopen its previously selected vehicle. The change-
-    // vehicle button alone is therefore not evidence that this VIN resolved.
-    await waitForVin(page,input.vin);
+    await lookupVin(page,input.vin);
     await page.getByRole('button', { name: 'Fahrzeug ändern', exact: true }).waitFor();
     const text = await visibleText(page);
     if (!text.includes(input.vin)) throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
@@ -827,18 +955,19 @@ export async function readQuote(input, credentials) {
     // Some VIN views have no TecDoc number in their route. Obtain its explicit
     // identifier from the linked HaynesPro vehicle instead of guessing a
     // catalogue model or treating a history entry as a confirmed vehicle.
+    const graphical=new URL(page.url()).pathname==='/dch-ax/yqservice/graphic-search';
     if(!vehicleId){
-      stage='quickview-haynes-identification';
-      preloadedHaynes=await openHaynesPage(context,page);
-      await preloadedHaynes.getByText(/TecDoc-Nummer:\s*\d+/).first().waitFor();
-      vehicleId=tecdocIdFromText(await visibleText(preloadedHaynes));
-      if(!vehicleId)throw manual('Fahrzeugzuordnung nicht bestätigt.');
-      await closeHaynesLaunchDialog(page);
-      console.info(JSON.stringify({component:'supplier-progress',stage:'quickview-vehicle-confirmed'}));
+      stage='haynes-vin-identification';
+      if(!graphical)throw manual('Fahrzeugzuordnung nicht bestätigt.');
+      preloadedHaynes=await openHaynesByVin(context,input.vin);
+      console.info(JSON.stringify({component:'supplier-progress',stage:'haynes-vin-confirmed'}));
     }
     const vehicleUrl=page.url();
     const vehicleExtraNames=(input.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'vehicle-confirmed' }));
+    const parts=[];
+    if(graphical){stage='graphical-materials';parts.push(...await chooseGraphMaterials(page,input));}
+    else {
     stage = 'materials-tab';
     await clickWithCookieConsent(page,page.getByText('Quick Click', { exact: true }));
     console.info(JSON.stringify({component:'supplier-service-categories', names:await page.locator('p-checkbox')
@@ -856,12 +985,14 @@ export async function readQuote(input, credentials) {
     stage = 'materials-wait-retail-prices';
     await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor({timeout:45000});
     stage = 'materials-select';
-    const parts = await chooseMaterials(page);
+    parts.push(...await chooseMaterials(page));
     if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames,input.vin);parts.push(...extra.selected);page=extra.page;}
+    }
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
     const haynes = preloadedHaynes||await openHaynesPage(context,page);
-    await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
+    if(graphical)await haynes.getByText('FIN: '+input.vin,{exact:true}).waitFor();
+    else await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
     const haynesOverviewUrl=haynes.url();
     await closeHaynesLaunchDialog(page);
     stage = 'labour-lookup';
@@ -935,7 +1066,7 @@ export async function readQuote(input, credentials) {
     const country = haynes.locator('#selectFilterCountry');
     if (await country.count() === 1) await country.selectOption({ label: 'Schweiz' });
     const lubricants = await visibleText(haynes);
-    const engine = lubricants.split(/\nMotor\n/).slice(1).join('\nMotor\n').split(/\nKühlsystem\n/)[0];
+    const engine = lubricants.split(/\nMotor(?: \([^\n]*\))?\n/).slice(1).join('\nMotor\n').split(/\nKühlsystem\n/)[0];
     const litres = parseOilCapacity(engine);
     const oilSpecification=engineOilSpecification(engine);
     if(!oilSpecification)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
