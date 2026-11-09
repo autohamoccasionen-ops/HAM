@@ -384,7 +384,15 @@ export function drainPlugRepairNumbers(text) {
   if(quantity!==1)return [];
   const declared=catalogueField(text,'alternativer Reparatursatz');
   if(!declared)return [];
-  const numbers=[...new Set(declared.split(/[,;]/).map(x=>x.trim()))];
+  // ELRING's numeric reference field can render a decimal comma (505,540)
+  // for an article whose catalogue number uses a dot (505.540). Confirm that
+  // manufacturer's existing 3+3 format before interpreting that punctuation;
+  // never split it into two unrelated search terms.
+  const numericElring=catalogBrand(text,['ELRING'])==='ELRING'
+    && /^\d{3}\.\d{3}$/.test(articleNumber(text))
+    && /^\d{3}[.,]\d{3}(?:\s*[,;]\s*\d{3}[.,]\d{3})*$/.test(declared);
+  const numbers=[...new Set(numericElring?declared.match(/\d{3}[.,]\d{3}/g).map(x=>x.replace(',','.'))
+    :declared.split(/[,;]/).map(x=>x.trim()))];
   if(numbers.length>3||numbers.some(x=>!/^[A-Z0-9][A-Z0-9./-]{1,59}$/i.test(x)))return [];
   return numbers.filter(x=>x!==articleNumber(text));
 }
