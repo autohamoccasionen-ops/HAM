@@ -79,7 +79,7 @@ export function operationEvidence(text,names){
   const matches=[];
   for(const name of names){
     const escaped=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    const re=new RegExp(escaped+'\\s*OE\\s*:\\s*([\\w-]+)\\s*\\+?\\s*(\\d+[.,]\\d{2})(?!\\d)','gi');
+    const re=new RegExp(escaped+'\\s*OE\\s*:\\s*([\\w-]+(?:[ \\t]+[\\w-]+)*?)\\s*\\+?\\s*(\\d+[.,]\\d{2})(?!\\d)','gi');
     for(const match of text.matchAll(re))matches.push({operation:match[1],hours:Number(match[2].replace(',','.'))});
   }
   const unique=[...new Map(matches.map(x=>[x.operation+':'+x.hours,x])).values()];
