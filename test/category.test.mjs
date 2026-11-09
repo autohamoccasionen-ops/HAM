@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin } from '../browser-provider.mjs';
+import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle, waitForVin, vehicleIdFromUrl } from '../browser-provider.mjs';
+
+test('only an actual vehicle route supplies the catalogue vehicle identifier',()=>{
+  assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/vehicle/V123M456'), '123');
+  assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/vehicle/V123M456/parts?tab=quick'), '123');
+  assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/home?vehicle=V123M456'), null);
+  assert.equal(vehicleIdFromUrl('https://supplier.test/dch-ax/vehicle/unknown'), null);
+});
 
 test('supplier VIN outage stops immediately even when an old vehicle label remains', async () => {
   let confirmedWaits=0;
