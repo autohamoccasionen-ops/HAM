@@ -49,6 +49,10 @@ test('purchase and promotional prices never replace the retail list price', () =
 });
 
 test('HaynesPro combined operation is billed once', () => {
+  assert.equal(parseOilHours('1C00501030WV0 Motoröl und Filter wechseln OE: 01 04 00 00\n+\n0,50'), 0.5);
+  assert.equal(parseOilHours('Motoröl und Filter wechseln OE: 01 04 00 00 0.60'), 0.6);
+  assert.throws(() => parseOilHours('Motoröl und Filter wechseln OE: 01 04 00 00\nBatterie\n0,70'), { code: 'LABOUR_UNCONFIRMED' });
+  assert.throws(() => parseOilHours('Motoröl und Filter wechseln OE: 01 04 00 00 + 0,50\nMotoröl und Filter wechseln OE: 01 04 00 01 + 0,70'), { code: 'LABOUR_UNCONFIRMED' });
   assert.equal(parseOilHours('1C00501030WV0 Motoröl und Filter wechseln OE: 00208001 + 0,80'), 0.8);
   assert.equal(parseOilCapacity('! Ölwanne, einschließlich Filter 9.0 (l)'), 9);
   assert.throws(() => parseOilCapacity('Ölwanne, einschließlich Filter 9.0 (l)\nÖlwanne, einschließlich Filter 8.0 (l)'), { code: 'MANUAL_REVIEW_REQUIRED' });
