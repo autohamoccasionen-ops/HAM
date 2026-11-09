@@ -1123,6 +1123,8 @@ export async function readQuote(input, credentials) {
     // The contents list repeats the Motor label before the actual data. Read
     // the heading's own section so table-of-contents text cannot truncate it.
     const engine=await engineHeading.locator('..').innerText();
+    console.info(JSON.stringify({component:'supplier-engine-oil-specification',rows:engine.split('\n').map(x=>x.trim())
+      .filter(x=>x&&x.length<140&&!/@|https?:|[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,65)}));
     const litres = parseOilCapacity(engine);
     const oilSpecification=engineOilSpecification(engine);
     if(!oilSpecification)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
