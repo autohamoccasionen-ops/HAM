@@ -104,7 +104,7 @@ export function calculateQuote(request, source, now = new Date()) {
     throw new QuoteError('VEHICLE_UNCONFIRMED', 'Fahrzeugzuordnung nicht bestätigt.');
   }
   const vehicleExtraNames=(request.extras||[]).filter(name=>Object.hasOwn(vehicleServices,name));
-  const requiredKinds=['oil','filter','drain-plug',...serviceComponents(vehicleExtraNames).map(x=>x.kind)];
+  const requiredKinds=['oil','filter',...serviceComponents(vehicleExtraNames).map(x=>x.kind)];
   if (!Array.isArray(source.materials) || source.materials.length !== requiredKinds.length ||
       new Set(source.materials.map(row => row.kind)).size !== requiredKinds.length ||
       !requiredKinds.every(kind => source.materials.some(row => row.kind === kind))) {

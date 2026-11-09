@@ -13,7 +13,6 @@ const source = { vin: input.vin, vehicle: 'Synthetic test vehicle', source: 'D-S
   labourHours: 0.8, labourOperation: 'test-operation', materials: [
     { kind: 'oil', partNumber: 'test-oil', description: 'Test oil', quantity: 9, unitNetCents: 3990, priceBasis: 'retail-ex-vat' },
     { kind: 'filter', partNumber: 'test-filter', description: 'Test filter', quantity: 1, unitNetCents: 4320, priceBasis: 'retail-ex-vat' },
-    { kind: 'drain-plug', partNumber: 'test-plug', description: 'Test plug with seal', quantity: 1, unitNetCents: 1346, priceBasis: 'retail-ex-vat' }
   ] };
 
 async function withServer(config, run) {
@@ -62,7 +61,7 @@ test('complete authenticated contract returns a calculated quote without credent
     const response = await fetch(base + '/api/quotes', { method: 'POST', headers, body: JSON.stringify(input) });
     assert.equal(response.status, 200);
     const data = await response.json();
-    assert.equal(data.totalCents, 57920);
+    assert.equal(data.totalCents, 56465);
     assert.equal(data.labour.hourlyRateNetCents, 15000);
     const status = await (await fetch(base + '/api/status', { headers })).json();
     assert.equal(status.liveConnectionVerified, true);
@@ -140,7 +139,7 @@ test('background quotation returns promptly, protects polling and preserves the 
     assert.equal(ready.status, 200);
     const quote = await ready.json();
     assert.equal(quote.vin, input.vin);
-    assert.equal(quote.totalCents, 57920);
+    assert.equal(quote.totalCents, 56465);
     assert.equal((await fetch(base + '/api/quote-jobs/00000000-0000-4000-8000-000000000000', { headers })).status, 404);
   });
 });
@@ -158,3 +157,4 @@ test('failed background lookup returns manual review without a price or private 
     assert.equal(JSON.parse(text).totalCents, undefined);
   });
 });
+

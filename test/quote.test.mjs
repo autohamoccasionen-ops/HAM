@@ -24,7 +24,6 @@ const verified = {
   labourHours: 0.8, labourOperation: '00208001', materials: [
     { kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71', quantity: 9, unitNetCents: 3990, priceBasis: 'retail-ex-vat' },
     { kind: 'filter', partNumber: 'OX 823/6D', description: 'MAHLE Ölfilter mit Dichtung', quantity: 1, unitNetCents: 4320, priceBasis: 'retail-ex-vat' },
-    { kind: 'drain-plug', partNumber: '928.450', description: 'ELRING Ölablassschraube mit Dichtring', quantity: 1, unitNetCents: 1346, priceBasis: 'retail-ex-vat' }
   ]
 };
 
@@ -32,10 +31,14 @@ test('verified oil service: list prices, CHF 150/h, 8.1% VAT and upward CHF 0.05
   const quote = calculateQuote(validateRequest(request), verified, new Date('2026-11-07T10:00:00Z'));
   assert.equal(quote.materials[0].netCents, 35910);
   assert.equal(quote.labour.netCents, 12000);
-  assert.equal(quote.subtotalNetCents, 53576);
-  assert.equal(quote.vatCents, 4340);
+  assert.equal(quote.subtotalNetCents, 52230);
+  assert.equal(quote.vatCents, 4231);
   assert.equal(quote.roundingCents, 4);
-  assert.equal(quote.totalCents, 57920);
+  assert.equal(quote.totalCents, 56465);
+  assert.deepEqual(quote.materials.map(row=>row.kind),['oil','filter']);
+  assert.throws(()=>calculateQuote(request,{...verified,materials:[...verified.materials,
+    {kind:'drain-plug',partNumber:'OLD-PLUG',description:'Excluded plug',quantity:1,unitNetCents:1346,priceBasis:'retail-ex-vat'}]}),
+    {code:'MATERIAL_UNCONFIRMED'});
 });
 
 test('purchase and promotional prices never replace the retail list price', () => {
@@ -54,7 +57,7 @@ test('HaynesPro combined operation is billed once', () => {
 
 test('reject mismatched VIN and incomplete or duplicate material selections', () => {
   assert.throws(() => calculateQuote(request, { ...verified, vin: 'X0000000000000000' }), { code: 'VEHICLE_UNCONFIRMED' });
-  assert.throws(() => calculateQuote(request, { ...verified, materials: verified.materials.slice(0, 2) }), { code: 'MATERIAL_UNCONFIRMED' });
+  assert.throws(() => calculateQuote(request, { ...verified, materials: verified.materials.slice(0, 1) }), { code: 'MATERIAL_UNCONFIRMED' });
   assert.throws(() => calculateQuote(request, { ...verified, materials: [verified.materials[0], verified.materials[1], verified.materials[1]] }), { code: 'MATERIAL_UNCONFIRMED' });
 });
 
@@ -78,9 +81,9 @@ test('validate customer inputs and require separate review of unsupported servic
 test('selected packages are itemized once and VAT is calculated on the complete quotation',()=>{
  const input=validateRequest({...request,extras:['Kraftstoffadditiv Diesel','Bremsflüssigkeit wechseln']});
  const result=calculateQuote(input,verified);
- assert.equal(result.baseSubtotalNetCents,53576);
- assert.equal(result.subtotalNetCents,67376);
- assert.equal(result.totalCents,72835);
+ assert.equal(result.baseSubtotalNetCents,52230);
+ assert.equal(result.subtotalNetCents,66030);
+ assert.equal(result.totalCents,71380);
  assert.equal(result.labour.netCents,12000);
  assert.deepEqual(result.addOns.map(x=>x.netCents),[11000,2800]);
 });
@@ -101,9 +104,9 @@ test('vehicle-specific brake materials and labour are required and charged once'
   {kind:'front-pads',partNumber:'TEST-PADS',description:'Test pad set',quantity:1,unitNetCents:8000,priceBasis:'retail-ex-vat'}],
   extraLabour:[{service,operation:'test-disc-operation',hours:1}]};
  const quote=calculateQuote(input,source);
- assert.equal(quote.materials.length,5);assert.equal(quote.labour.hours,1.8);
- assert.equal(quote.subtotalNetCents,96576);
- assert.equal(quote.baseOilSubtotalNetCents,53576);assert.equal(quote.serviceLines[0].netCents,43000);
+ assert.equal(quote.materials.length,4);assert.equal(quote.labour.hours,1.8);
+ assert.equal(quote.subtotalNetCents,95230);
+ assert.equal(quote.baseOilSubtotalNetCents,52230);assert.equal(quote.serviceLines[0].netCents,43000);
  assert.throws(()=>calculateQuote(input,{...source,extraLabour:[]}),{code:'LABOUR_UNCONFIRMED'});
  assert.throws(()=>validateRequest({...input,extras:[service,'Bremsbeläge Vorderachse erneuern']}),{code:'INVALID_REQUEST'});
 });

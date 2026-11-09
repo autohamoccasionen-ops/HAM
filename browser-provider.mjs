@@ -371,94 +371,7 @@ export function materialCandidate(text, kind) {
     quantity: 1, unitNetCents: retailPriceCents(text), priceBasis: 'retail-ex-vat', brand };
 }
 
-function catalogueField(text, label) {
-  const escaped=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  return String(text).match(new RegExp('(?:^|\\n|\\|)\\s*'+escaped+'\\s*:\\s*([^\\n|]+)','i'))?.[1]?.trim()||null;
-}
-
-export function drainPlugRepairNumbers(text) {
-  if(!/\bVIN\b/.test(text)||!/Verschlussschraube, Ölwanne/.test(text)
-    ||!/ohne Dichtring/.test(text)||/Auf Anfrage|ABVERKAUFSARTIKEL|\d+ Stück = 1 Pack/i.test(text)
-    ||!catalogBrand(text,['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS']))return [];
-  const quantity=Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1]);
-  if(quantity!==1)return [];
-  const declared=catalogueField(text,'alternativer Reparatursatz');
-  if(!declared)return [];
-  // ELRING's numeric reference field can render a decimal comma (505,540)
-  // for an article whose catalogue number uses a dot (505.540). Confirm that
-  // manufacturer's existing 3+3 format before interpreting that punctuation;
-  // never split it into two unrelated search terms.
-  const numericElring=catalogBrand(text,['ELRING'])==='ELRING'
-    && /^\d{3}\.\d{3}$/.test(articleNumber(text))
-    && /^\d{3}[.,]\d{3}(?:\s*[,;]\s*\d{3}[.,]\d{3})*$/.test(declared);
-  const numbers=[...new Set(numericElring?declared.match(/\d{3}[.,]\d{3}/g).map(x=>x.replace(',','.'))
-    :declared.split(/[,;]/).map(x=>x.trim()))];
-  if(numbers.length>3||numbers.some(x=>!/^[A-Z0-9][A-Z0-9./-]{1,59}$/i.test(x)))return [];
-  return numbers.filter(x=>x!==articleNumber(text));
-}
-
-export function replacementDrainPlug(original, alternative, number) {
-  if(!drainPlugRepairNumbers(original).includes(number))return null;
-  const brands=['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS'];
-  const brand=catalogBrand(original,brands);
-  if(catalogBrand(alternative,brands)!==brand||articleNumber(alternative)!==number
-    ||!/Verschlussschraube, Ölwanne/.test(alternative)||!/mit Dichtring|mit Dichtung/.test(alternative)
-    ||/ohne Dichtring|Auf Anfrage|ABVERKAUFSARTIKEL|\d+ Stück = 1 Pack/i.test(alternative))return null;
-  const normalize=value=>value?.toUpperCase().replace(/\s/g,'').replace(/,/g,'.');
-  const thread=normalize(catalogueField(original,'Gewindemaß'));
-  if(!thread||!/^M\d+(?:\.\d+)?X\d+(?:\.\d+)?(?:X\d+(?:\.\d+)?)?$/.test(thread)
-    ||normalize(catalogueField(alternative,'Gewindemaß'))!==thread)return null;
-  const quantity=alternative.match(/benötigte Stückzahl:\s*(\d+)/);
-  if(quantity&&Number(quantity[1])!==1)return null;
-  // A supplier-declared alternative kit inherits this exact VIN-confirmed
-  // plug's fitment only with the same manufacturer and complete thread size.
-  // A generic catalogue search result alone never establishes compatibility.
-  return {kind:'drain-plug',partNumber:number,description:brand+' Ölablassschraube mit Dichtring',
-    quantity:1,unitNetCents:retailPriceCents(alternative),priceBasis:'retail-ex-vat',brand};
-}
-
-async function chooseDrainPlugRepair(page,entries) {
-  const sources=entries.filter(row=>drainPlugRepairNumbers(row.text).length);
-  if(sources.length!==1)return null;
-  // Full-text navigation replaces this tab's catalogue route. Graphical
-  // drawings need their own return path before this fallback can be used.
-  if(new URL(page.url()).pathname==='/dch-ax/yqservice/graphic-search')return null;
-  const original=sources[0].text;
-  const numbers=drainPlugRepairNumbers(original);
-  console.info(JSON.stringify({component:'supplier-progress',stage:'drain-repair-kit-search',declaredAlternatives:numbers.length}));
-  for(const number of numbers) {
-    const box=page.getByRole('textbox',{name:'Volltextsuche: Artikel, Fahrzeuge, VIN, etc',exact:true});
-    await box.fill(number);await box.press('Enter');
-    await page.getByText(`Suchergebnisse "${number}"`,{exact:true}).waitFor();
-    let row;
-    for(let attempt=0;attempt<60;attempt++) {
-      const matches=(await catalogueSnapshot(page)).filter(x=>x.partNumber===number);
-      if(matches.length===1&&/Verschlussschraube, Ölwanne/.test(matches[0].text)){row=matches[0];break;}
-      await page.waitForTimeout(250);
-    }
-    if(!row){console.info(JSON.stringify({component:'supplier-repair-criteria',article:number,exactCard:false}));continue;}
-    const article=snapshotArticle(page,row);
-    const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
-    if(await details.count()===1)await clickWithCookieConsent(page,details);
-    for(let attempt=0;attempt<30;attempt++) {
-      const text=await readCatalogCard(article);
-      let part;try{part=replacementDrainPlug(original,text,number)}catch{}
-      if(part){console.info(JSON.stringify({component:'supplier-progress',stage:'drain-repair-kit-confirmed'}));return part;}
-      await page.waitForTimeout(200);
-    }
-    const text=await readCatalogCard(article);
-    console.info(JSON.stringify({component:'supplier-repair-criteria',article:number,exactCard:true,
-      sameBrand:catalogBrand(original,['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS'])===catalogBrand(text,['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS']),
-      originalThread:catalogueField(original,'Gewindemaß'),replacementThread:catalogueField(text,'Gewindemaß'),
-      seal:/mit Dichtring|mit Dichtung/.test(text),withoutSeal:/ohne Dichtring/.test(text),
-      multiPack:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage/.test(text),
-      quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,
-      retailLabel:/UVPE:\s*[\d’'.,]+\s*CHF/.test(text)}));
-  }
-  return null;
-}
-
-export async function chooseMaterials(page, kinds=['filter','drain-plug']) {
+export async function chooseMaterials(page, kinds=['filter']) {
   // Price responses can arrive before names, brands and VIN badges.
   // Wait for card identity and price, then open its details to confirm the
   // seal. Requiring a seal before opening details can never complete when
@@ -500,7 +413,6 @@ export async function chooseMaterials(page, kinds=['filter','drain-plug']) {
         if (candidate) { selected = candidate; break brandSearch; }
       }
     }
-    if(!selected&&kind==='drain-plug')selected=await chooseDrainPlugRepair(page,entries);
     if (!selected) {
       console.warn(JSON.stringify({ component: 'supplier-material-criteria', kind, cards: entries.slice(0, 16).map(({ text }) => ({
         vinBadge: /\bVIN\b/.test(text), filterName: /Ölfilter/.test(text), plugName: /Verschlussschraube, Ölwanne/.test(text),
@@ -647,7 +559,7 @@ async function openVehicleFilterTree(page,category,expectedVin){
 
 async function chooseRequestedMaterials(page,vehicleUrl,names,expectedVin){
   const selected=[];
-  let previousCategories=['Oelfilter','Ablassschraube Ölwanne'];
+  let previousCategories=['Oelfilter'];
   const groups=[...new Map(names.map(name=>{const d=vehicleServices[name];return [d.category+':'+(d.categoryAxle||''),{category:d.category,axle:d.categoryAxle}]})).values()];
   for(const group of groups){
     const {category,axle}=group;
@@ -943,15 +855,6 @@ async function chooseGraphMaterials(page,input) {
   await graphPosition(page,'Satz Ölfiltereinsatz');
   const parts=await chooseMaterials(page,['filter']);
   console.info(JSON.stringify({component:'supplier-progress',stage:'graph-oil-filter-confirmed'}));
-  await graphBack(page);
-  await clickWithCookieConsent(page,page.getByRole('button',{name:'Motor',exact:true}));
-  const motor=page.getByRole('region',{name:'Motor',exact:true});
-  await clickWithCookieConsent(page,motor.getByText('Schmierung',{exact:true}));
-  await clickWithCookieConsent(page,motor.getByText('Ölwanne/-anbauteile',{exact:true}));
-  await openGraphDrawing(page,'Ölwanne/Ölmessvorrichtung',input.vin);
-  await graphPosition(page,'Verschlussschraube');
-  parts.push(...await chooseMaterials(page,['drain-plug']));
-  console.info(JSON.stringify({component:'supplier-progress',stage:'graph-drain-plug-confirmed'}));
   if(names.includes('Luftfilter-Wechsel')) {
     await graphBack(page);
     const filter=page.getByRole('button',{name:'Filter',exact:true});
@@ -1125,8 +1028,6 @@ export async function readQuote(input, credentials) {
       .evaluateAll(nodes=>nodes.map(n=>n.innerText.trim()).filter(text=>text&&text.length<100).slice(0,80))}));
     stage = 'materials-filter-category';
     await clickCategory(page, 'Oelfilter');
-    stage = 'materials-drain-category';
-    await clickCategory(page, 'Ablassschraube Ölwanne');
     stage = 'materials-open-list';
     await clickWithCookieConsent(page,page.getByRole('button', { name: 'Artikel anzeigen', exact: true }));
     stage = 'materials-wait-list';
