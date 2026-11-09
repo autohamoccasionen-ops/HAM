@@ -463,6 +463,11 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     await clickWithCookieConsent(page,page.getByRole('button',{name:'Artikel anzeigen',exact:true}));
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'articles-opened',category}));
     await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor();
+    const grouped=page.locator('.new-article-group-context');
+    if(await grouped.count()===1)console.info(JSON.stringify({component:'supplier-extra-group',category,
+      text:(await grouped.innerText()).replace(/[A-HJ-NPR-Z0-9]{17}/g,'[vehicle]').replace(/\S+@\S+/g,'[account]').slice(0,3000),
+      controls:await grouped.locator('button,a,select').evaluateAll(nodes=>nodes.map(n=>({tag:n.tagName,
+        text:(n.innerText||'').trim().slice(0,120),role:n.getAttribute('role')})).slice(0,25))}));
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
