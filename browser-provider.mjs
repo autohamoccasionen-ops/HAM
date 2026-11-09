@@ -371,24 +371,23 @@ export function materialCandidate(text, kind) {
     quantity: 1, unitNetCents: retailPriceCents(text), priceBasis: 'retail-ex-vat', brand };
 }
 
-async function chooseMaterials(page, kinds=['filter','drain-plug']) {
+export async function chooseMaterials(page, kinds=['filter','drain-plug']) {
   // Price responses can arrive before names, brands and VIN badges. Do not
-  // freeze that partial state into the material selection. Require at least
-  // one complete candidate for every requested kind before taking the cards.
+  // Wait for card identity and price, then open its details to confirm the
+  // seal. Requiring a seal before opening details can never complete when
+  // the supplier keeps that information in a collapsed panel.
+  let entries;
   for(let attempt=0;attempt<60;attempt++) {
-    const snapshot=await catalogueSnapshot(page);
-    if(kinds.every(kind=>snapshot.some(row=>{try{return !!materialCandidate(row.text,kind)}catch{return false}})))break;
+    entries=await catalogueSnapshot(page);
+    if(kinds.every(kind=>entries.some(row=>row.partNumber && /\bVIN\b/.test(row.text)
+      && (kind==='filter'?/Ölfilter/:/Verschlussschraube, Ölwanne/).test(row.text)
+      && catalogBrand(row.text,kind==='filter'?['MAHLE','MANN-FILTER','BOSCH']:['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS'])
+      && /UVPE:\s*[\d’'.,]+\s*CHF/.test(row.text))))break;
     if(attempt===59)throw manual('Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.');
     await page.waitForTimeout(250);
   }
-  const cards = await catalogueCards(page);
-  const entries = [];
-  for (const card of cards) {
-    if (await card.isVisible()) {
-      const article = await completeArticleContainer(card);
-      entries.push({ card: article, text: await readCatalogCard(article) });
-    }
-  }
+  // Use the visible enclosing card from the snapshot. Its collapsed detail
+  // node can itself be hidden while the product and controls are visible.
   const selectedParts = [];
   for (const kind of kinds) {
     const priorities = kind === 'filter' ? ['MAHLE', 'MANN-FILTER', 'BOSCH'] : ['ELRING', 'FEBI BILSTEIN', 'HERTH+BUSS ELPARTS'];
@@ -397,16 +396,17 @@ async function chooseMaterials(page, kinds=['filter','drain-plug']) {
       for (const entry of entries) {
         if (catalogBrand(entry.text,priorities)!==brand || !(kind === 'filter' ? /Ölfilter/.test(entry.text) : /Verschlussschraube, Ölwanne/.test(entry.text))) continue;
         if(/Auf Anfrage|ABVERKAUFSARTIKEL/i.test(entry.text))continue;
-        await waitForRetailPrice(entry.card);
-        entry.text=await readCatalogCard(entry.card);
+        const article=snapshotArticle(page,entry);
+        await waitForRetailPrice(article);
+        entry.text=await readCatalogCard(article);
         let candidate = materialCandidate(entry.text, kind);
         if (!candidate) {
-          const details = entry.card.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
+          const details = article.getByRole('button', { name: 'Mehr Details', exact: true }).filter({ visible: true });
           if (await details.count() === 1) {
             await clickWithCookieConsent(page,details);
-            await entry.card.getByText(/mit Dichtung|mit Dichtring/).first()
+            await article.getByText(/mit Dichtung|mit Dichtring/).first()
               .waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-            entry.text = await readCatalogCard(entry.card);
+            entry.text = await readCatalogCard(article);
             candidate = materialCandidate(entry.text, kind);
           }
         }
