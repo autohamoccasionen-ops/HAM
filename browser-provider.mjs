@@ -159,10 +159,15 @@ export async function search(page, term) {
 // Search headings and card placeholders render before the result data. Wait
 // for the requested article rather than inspecting an earlier category list.
 export async function waitForArticle(page, number) {
-  const escaped = number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  await page.locator('[id^="part-detail-"]').filter({
-    hasText: new RegExp('Artikel Nr\\.:\\s*' + escaped + '(?:\\s|$)')
-  }).first().waitFor({ state: 'visible', timeout: 30000 });
+  await page.waitForFunction(number => {
+    return Array.from(document.querySelectorAll('[id^="part-detail-"]')).some(card => {
+      if (!card.getBoundingClientRect().height) return false;
+      let root=card;
+      for(let depth=0;depth<5&&root.parentElement
+        &&root.parentElement.querySelectorAll('[id^="part-detail-"]').length===1;depth++)root=root.parentElement;
+      return (root.innerText||'').match(/Artikel Nr\.:\s*([^\n]+)/)?.[1]?.trim()===number;
+    });
+  }, number, {timeout:30000});
 }
 
 function articleNumber(text) {
@@ -390,8 +395,14 @@ async function clickCategory(page, name, explicitLabel, desired = true) {
   if (await label.count() !== 1) label = scope.getByText(name, { exact: true }).filter({ visible: true });
   if (await label.count() !== 1) throw manual('Teilekategorie nicht eindeutig.');
   const row = label.locator('..');
-  let matches = scope.getByRole('checkbox', { name, exact: true });
-  if (await matches.count() !== 1) matches = scope.getByLabel(name, { exact: true });
+  // A PrimeNG checkbox exposes a native input and an ARIA wrapper. Resolve
+  // the control inside this exact label's component, especially when front
+  // and rear categories share the same accessible name.
+  let matches = row.locator('input[type="checkbox"]');
+  if (await matches.count() !== 1) {
+    const labelFor=await label.getAttribute('for');
+    if(labelFor)matches=scope.locator('[id="'+labelFor.replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"]');
+  }
   if (await matches.count() !== 1) {
     // Some category layouts put two controls in the same row. Resolve the
     // native label association instead of choosing the first checkbox.
@@ -476,7 +487,13 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     }else await clickCategory(page,category);
     await clickWithCookieConsent(page,page.getByRole('button',{name:'Artikel anzeigen',exact:true}));
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'articles-opened',category}));
-    await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor();
+    const noParts=page.getByText('Es können keine Teile gefunden werden. Bitte prüfen Sie Ihre Eingaben.',{exact:true});
+    const priced=page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/});
+    await priced.or(noParts).first().waitFor();
+    if(await noParts.isVisible()){
+      console.info(JSON.stringify({component:'supplier-extra-no-results',category}));
+      throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
+    }
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
