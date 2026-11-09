@@ -450,7 +450,7 @@ async function reportCatalogueNavigation(page,category){
         &&/Teilebaum|Katalog|Artikel|Filter|Batterie|Scheiben|Wischer|Quick Click|Wartung/i.test(t)))].slice(0,70))}));
 }
 
-async function chooseRequestedMaterials(page,vehicleUrl,names){
+async function chooseRequestedMaterials(page,vehicleUrl,names,expectedVin){
   const selected=[];
   let previousCategories=['Oelfilter','Ablassschraube Ölwanne'];
   const groups=[...new Map(names.map(name=>{const d=vehicleServices[name];return [d.category+':'+(d.categoryAxle||''),{category:d.category,axle:d.categoryAxle}]})).values()];
@@ -501,21 +501,37 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const noParts=page.getByText('Es können keine Teile gefunden werden. Bitte prüfen Sie Ihre Eingaben.',{exact:true});
     const priced=page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/});
     await priced.or(noParts).first().waitFor();
-    if(await noParts.isVisible()){
-      console.info(JSON.stringify({component:'supplier-extra-no-results',category}));
-      await reportCatalogueNavigation(page,category);
-      throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
-    }
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
     let cards=await catalogueSnapshot(page);
     for(let attempt=0;attempt<60&&!requestedProductsPresent(cards,components);attempt++){
-      if(await page.getByText('Es können keine Teile gefunden werden. Bitte prüfen Sie Ihre Eingaben.',{exact:true}).isVisible()){
-        await reportCatalogueNavigation(page,category);
-        throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
-      }
+      if(await noParts.isVisible())break;
       await page.waitForTimeout(500);cards=await catalogueSnapshot(page);
+    }
+    // The portal carries catalogue refinements between product groups. Clear
+    // only its visible normal filter control; keep the verified VIN context.
+    // This is not another VIN lookup and never substitutes a universal part.
+    if(!requestedProductsPresent(cards,components)){
+      const reset=page.getByRole('button',{name:'Filter zurücksetzen',exact:true}).filter({visible:true});
+      if(await reset.count()===1&&await reset.isEnabled()){
+        if(!expectedVin||!(await visibleText(page)).includes(expectedVin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
+        await clickWithCookieConsent(page,reset);
+        await noParts.waitFor({state:'hidden',timeout:5000}).catch(()=>{});
+        await page.getByText(expectedVin,{exact:false}).first().waitFor({state:'visible'});
+        console.info(JSON.stringify({component:'supplier-catalogue-filters-reset',category}));
+        for(let attempt=0;attempt<60;attempt++){
+          cards=await catalogueSnapshot(page);
+          if(requestedProductsPresent(cards,components))break;
+          if(attempt>=4&&await noParts.isVisible())break;
+          await page.waitForTimeout(500);
+        }
+      }
+    }
+    if(!requestedProductsPresent(cards,components)&&await noParts.isVisible()){
+      console.info(JSON.stringify({component:'supplier-extra-no-results',category}));
+      await reportCatalogueNavigation(page,category);
+      throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
     }
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
     if(!cards.length)console.info(JSON.stringify({component:'supplier-extra-empty',category,
@@ -771,7 +787,7 @@ export async function readQuote(input, credentials) {
     await page.locator('[id^="part-detail-"]').filter({ hasText: /UVPE:\s*[\d’'.,]+\s*CHF/ }).first().waitFor({timeout:45000});
     stage = 'materials-select';
     const parts = await chooseMaterials(page);
-    if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames);parts.push(...extra.selected);page=extra.page;}
+    if(vehicleExtraNames.length){stage='additional-materials';const extra=await chooseRequestedMaterials(page,vehicleUrl,vehicleExtraNames,input.vin);parts.push(...extra.selected);page=extra.page;}
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'materials-confirmed' }));
     stage = 'haynes-open';
     await clickWithCookieConsent(page,page.getByRole('link', { name: 'Haynes Pro', exact: true }));
