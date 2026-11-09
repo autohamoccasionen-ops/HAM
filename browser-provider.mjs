@@ -442,6 +442,14 @@ async function clickCategory(page, name, explicitLabel, desired = true) {
   throw manual('Teileauswahl muss geprüft werden.');
 }
 
+async function reportCatalogueNavigation(page,category){
+  console.info(JSON.stringify({component:'supplier-catalogue-navigation',category,
+    controls:await page.locator('a,button,[role="tab"],[role="treeitem"]').evaluateAll(nodes=>[...new Set(nodes
+      .filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height})
+      .map(n=>(n.innerText||'').trim()).filter(t=>t.length<90&&!/[A-HJ-NPR-Z0-9]{17}|@|https?:/.test(t)
+        &&/Teilebaum|Katalog|Artikel|Filter|Batterie|Scheiben|Wischer|Quick Click|Wartung/i.test(t)))].slice(0,70))}));
+}
+
 async function chooseRequestedMaterials(page,vehicleUrl,names){
   const selected=[];
   let previousCategories=['Oelfilter','Ablassschraube Ölwanne'];
@@ -495,11 +503,7 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     await priced.or(noParts).first().waitFor();
     if(await noParts.isVisible()){
       console.info(JSON.stringify({component:'supplier-extra-no-results',category}));
-      console.info(JSON.stringify({component:'supplier-catalogue-navigation',category,
-        controls:await page.locator('a,button,[role="tab"],[role="treeitem"]').evaluateAll(nodes=>[...new Set(nodes
-          .filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height})
-          .map(n=>(n.innerText||'').trim()).filter(t=>t.length<90&&!/[A-HJ-NPR-Z0-9]{17}|@|https?:/.test(t)
-            &&/Teilebaum|Katalog|Artikel|Filter|Batterie|Scheiben|Wischer|Quick Click|Wartung/i.test(t)))].slice(0,70))}));
+      await reportCatalogueNavigation(page,category);
       throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
     }
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
@@ -507,8 +511,10 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     const entries=[];
     let cards=await catalogueSnapshot(page);
     for(let attempt=0;attempt<60&&!requestedProductsPresent(cards,components);attempt++){
-      if(await page.getByText('Es können keine Teile gefunden werden. Bitte prüfen Sie Ihre Eingaben.',{exact:true}).isVisible())
+      if(await page.getByText('Es können keine Teile gefunden werden. Bitte prüfen Sie Ihre Eingaben.',{exact:true}).isVisible()){
+        await reportCatalogueNavigation(page,category);
         throw manual('Der Teilekatalog liefert für diese Fahrzeugauswahl keine passenden Artikel.');
+      }
       await page.waitForTimeout(500);cards=await catalogueSnapshot(page);
     }
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'article-count',category,count:cards.length}));
