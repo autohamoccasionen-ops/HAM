@@ -1179,7 +1179,6 @@ export async function readQuote(input, credentials) {
         loginFormVisible:await page.locator('input[type="password"]').isVisible().catch(()=>false),
         filterDialogVisible:await page.getByRole('dialog',{name:'Filter',exact:true}).isVisible().catch(()=>false),
         dialogs:await page.getByRole('dialog').evaluateAll(nodes=>nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>({
-          label:n.getAttribute('aria-label'),
           heading:Array.from(n.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).map(x=>(x.innerText||'').trim()).filter(t=>t.length<100&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)),
           buttons:Array.from(n.querySelectorAll('button')).map(x=>(x.innerText||'').trim()).filter(t=>t.length<60&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t))}))),
         visibleControls:await page.locator('button,a,[role="heading"]').evaluateAll(nodes=>[...new Set(nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>(n.innerText||'').trim()).filter(t=>/^(Einloggen|Abbrechen|Bestätigen|Schließen|Schliessen|Close|Filter|OK)$/i.test(t)))])}));
