@@ -1073,7 +1073,7 @@ export async function readQuote(input, credentials) {
       .map(x=>x.trim()).filter(x=>x.length<140&&/Filter|Brems|Zündker|Riemen|Batterie|Getriebe|Wisch|Karosserie/.test(x)
         &&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,60)}));
     const labourHours = parseOilHours(labourText);
-    const operation = labourText.match(/Motoröl und Filter wechseln\s*OE\s*:\s*([\w-]+)/)?.[1];
+    const operation = operationEvidence(labourText,['Motoröl und Filter wechseln'])?.operation;
     if (!operation) throw manual('Arbeitsposition konnte nicht eindeutig gelesen werden.');
     const extraLabour=[];
     let expandedLabourText=labourText;
