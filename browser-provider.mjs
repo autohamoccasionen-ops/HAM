@@ -372,6 +372,15 @@ export function materialCandidate(text, kind) {
 }
 
 async function chooseMaterials(page, kinds=['filter','drain-plug']) {
+  // Price responses can arrive before names, brands and VIN badges. Do not
+  // freeze that partial state into the material selection. Require at least
+  // one complete candidate for every requested kind before taking the cards.
+  for(let attempt=0;attempt<60;attempt++) {
+    const snapshot=await catalogueSnapshot(page);
+    if(kinds.every(kind=>snapshot.some(row=>{try{return !!materialCandidate(row.text,kind)}catch{return false}})))break;
+    if(attempt===59)throw manual('Passender Ölfilter oder Ablassstopfen mit Dichtung nicht eindeutig gefunden.');
+    await page.waitForTimeout(250);
+  }
   const cards = await catalogueCards(page);
   const entries = [];
   for (const card of cards) {
@@ -765,7 +774,14 @@ async function graphPosition(page,name) {
   await rows.first().waitFor();
   if(await rows.count()!==1)throw manual('Mehrere passende Teilevarianten erfordern eine fahrzeugspezifische Prüfung.');
   await rows.getByRole('checkbox').check();
-  await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor({timeout:45000});
+  const product=name==='Satz Ölfiltereinsatz'?/Ölfilter/:name==='Verschlussschraube'?/Verschlussschraube, Ölwanne/:/Luftfilter/;
+  for(let attempt=0;attempt<100;attempt++) {
+    const cards=await catalogueSnapshot(page);
+    if(cards.length&&cards.every(row=>row.partNumber)&&cards.some(row=>
+      product.test(row.text)&&/\bVIN\b/.test(row.text)&&/UVPE:\s*[\d’'.,]+\s*CHF/.test(row.text)))return;
+    await page.waitForTimeout(250);
+  }
+  throw manual('Teilezuordnung, Einbauseite oder benötigte Stückzahl konnte nicht bestätigt werden.');
 }
 
 async function graphBack(page) {
