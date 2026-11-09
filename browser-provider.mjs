@@ -428,7 +428,7 @@ async function chooseDrainPlugRepair(page,entries) {
       if(matches.length===1&&/Verschlussschraube, Ölwanne/.test(matches[0].text)){row=matches[0];break;}
       await page.waitForTimeout(250);
     }
-    if(!row)continue;
+    if(!row){console.info(JSON.stringify({component:'supplier-repair-criteria',article:number,exactCard:false}));continue;}
     const article=snapshotArticle(page,row);
     const details=article.getByRole('button',{name:'Mehr Details',exact:true}).filter({visible:true});
     if(await details.count()===1)await clickWithCookieConsent(page,details);
@@ -438,6 +438,14 @@ async function chooseDrainPlugRepair(page,entries) {
       if(part){console.info(JSON.stringify({component:'supplier-progress',stage:'drain-repair-kit-confirmed'}));return part;}
       await page.waitForTimeout(200);
     }
+    const text=await readCatalogCard(article);
+    console.info(JSON.stringify({component:'supplier-repair-criteria',article:number,exactCard:true,
+      sameBrand:catalogBrand(original,['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS'])===catalogBrand(text,['ELRING','FEBI BILSTEIN','HERTH+BUSS ELPARTS']),
+      originalThread:catalogueField(original,'Gewindemaß'),replacementThread:catalogueField(text,'Gewindemaß'),
+      seal:/mit Dichtring|mit Dichtung/.test(text),withoutSeal:/ohne Dichtring/.test(text),
+      multiPack:/\d+ Stück = 1 Pack/i.test(text),unpriced:/Auf Anfrage/.test(text),
+      quantity:Number(text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,
+      retailLabel:/UVPE:\s*[\d’'.,]+\s*CHF/.test(text)}));
   }
   return null;
 }
