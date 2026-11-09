@@ -53,7 +53,9 @@ proxy; do not call this API with the secret directly from browser code.
   a past successful lookup does not guarantee future availability.
 - Motoröl-Service supports garage package prices and guarded lookups for
   front/rear brake pads, brake discs with pads, filters, starter batteries,
-  spark plugs, belts and wipers. Each requires its own complete parts and labour evidence.
+  spark plugs, belts and wipers. Each requires complete live parts evidence.
+  Wiper labour uses the garage's configured 15 minutes per front/rear service;
+  other vehicle-dependent operations require live HaynesPro labour evidence.
   The presence of an adapter is not proof of end-to-end supplier verification.
   Unpriced, ambiguous, unlisted or incomplete selections require manual review.
   An explicit supplier no-parts result is also manual review; it never means
