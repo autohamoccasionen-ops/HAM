@@ -474,6 +474,10 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     if(!cards.length)console.info(JSON.stringify({component:'supplier-extra-empty',category,
       state:await page.evaluate(()=>({detailNodes:document.querySelectorAll('[id^="part-detail-"]').length,
         noResults:/keine (?:passenden )?(?:Artikel|Ergebnisse|Produkte)|keine Treffer/i.test(document.body.innerText),
+        noData:/keine Daten|nicht gefunden|0 Artikel|0 Treffer/i.test(document.body.innerText),
+        sessionExpired:/Sitzung.*abgelaufen/i.test(document.body.innerText),
+        vehicleVisible:Array.from(document.querySelectorAll('button')).some(n=>n.innerText.trim()==='Fahrzeug ändern'),
+        productContainers:Array.from(document.querySelectorAll('[class]')).filter(n=>/article|product|part-list/i.test(String(n.className))).slice(0,25).map(n=>({tag:n.tagName,css:String(n.className).slice(0,180),children:n.children.length})),
         loading:!!document.querySelector('[aria-busy="true"],p-progressspinner'),
         loginForm:!!document.querySelector('input[type="password"]')}))}));
     console.info(JSON.stringify({component:'supplier-extra-snapshot-criteria',category,cards:cards.slice(0,30).map(row=>({
