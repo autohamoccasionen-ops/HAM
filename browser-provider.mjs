@@ -148,12 +148,21 @@ async function visibleText(page) {
   return clean(await page.locator('body').innerText());
 }
 
-async function search(page, term) {
+export async function search(page, term) {
   const box = page.getByRole('textbox', { name: 'Volltextsuche: Artikel, Fahrzeuge, VIN, etc', exact: true });
   await box.fill(term);
   await box.press('Enter');
   await page.getByText(`Suchergebnisse "${term}"`, { exact: true }).waitFor();
   await page.locator('[id^="part-detail-"]').first().waitFor();
+}
+
+// Search headings and card placeholders render before the result data. Wait
+// for the requested article rather than inspecting an earlier category list.
+export async function waitForArticle(page, number) {
+  const escaped = number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.locator('[id^="part-detail-"]').filter({
+    hasText: new RegExp('Artikel Nr\\.:\\s*' + escaped + '(?:\\s|$)')
+  }).first().waitFor({ state: 'visible', timeout: 30000 });
 }
 
 function articleNumber(text) {
@@ -755,6 +764,8 @@ export async function readQuote(input, credentials) {
     const extraLabour=[];
     let expandedLabourText=labourText;
     for(const name of vehicleExtraNames){
+      const fixed = vehicleServices[name].garageLabour;
+      if (fixed) { extraLabour.push({service:name,...fixed}); continue; }
       let evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
       if(!evidence&&/filter/i.test(vehicleServices[name].category)){
         const filter=haynes.getByText('Filter',{exact:true}).filter({visible:true});
@@ -824,6 +835,7 @@ export async function readQuote(input, credentials) {
     }
     stage = 'oil-product-search';
     await search(page, '15F6E6');
+    await waitForArticle(page, '15F6E6');
     stage = 'oil-product-identification';
     const oilEntries = [];
     for (const card of await catalogueCards(page)) {
