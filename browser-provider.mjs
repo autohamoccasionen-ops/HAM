@@ -1137,6 +1137,7 @@ export async function readQuote(input, credentials) {
     if (await country.count() === 1) await country.selectOption({ label: 'Schweiz' });
     const lubricants = await visibleText(haynes);
     const engineHeading=haynes.getByRole('heading',{level:2,name:/^Motor(?:\s*\([^)]*\))?\s*$/}).filter({visible:true});
+    console.info(JSON.stringify({component:'supplier-engine-sections',matching:await engineHeading.count(),headings:await haynes.getByRole('heading').allTextContents()}));
     if(await engineHeading.count()!==1)throw manual('Die benötigte Ölfreigabe muss individuell geprüft werden.');
     // The contents list repeats the Motor label before the actual data. Read
     // the heading's own section so table-of-contents text cannot truncate it.
