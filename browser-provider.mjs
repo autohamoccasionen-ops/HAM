@@ -463,11 +463,6 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
     await clickWithCookieConsent(page,page.getByRole('button',{name:'Artikel anzeigen',exact:true}));
     console.info(JSON.stringify({component:'supplier-extra-progress',step:'articles-opened',category}));
     await page.locator('[id^="part-detail-"]').filter({hasText:/UVPE:\s*[\d’'.,]+\s*CHF/}).first().waitFor();
-    const grouped=page.locator('.new-article-group-context');
-    if(await grouped.count()===1)console.info(JSON.stringify({component:'supplier-extra-group',category,
-      text:(await grouped.innerText()).replace(/[A-HJ-NPR-Z0-9]{17}/g,'[vehicle]').replace(/\S+@\S+/g,'[account]').slice(0,3000),
-      controls:await grouped.locator('button,a,select').evaluateAll(nodes=>nodes.map(n=>({tag:n.tagName,
-        text:(n.innerText||'').trim().slice(0,120),role:n.getAttribute('role')})).slice(0,25))}));
     const scope=definition.categoryAxle?{confirmed:true,axle}:{};
     const components=serviceComponents(groupNames);
     const entries=[];
@@ -485,6 +480,11 @@ async function chooseRequestedMaterials(page,vehicleUrl,names){
         productContainers:Array.from(document.querySelectorAll('[class]')).filter(n=>/article|product|part-list/i.test(String(n.className))).slice(0,25).map(n=>({tag:n.tagName,css:String(n.className).slice(0,180),children:n.children.length})),
         loading:!!document.querySelector('[aria-busy="true"],p-progressspinner'),
         loginForm:!!document.querySelector('input[type="password"]')}))}));
+    const grouped=page.locator('.new-article-group-context');
+    if(!cards.length&&await grouped.count()===1)console.info(JSON.stringify({component:'supplier-extra-group',category,
+      text:(await grouped.innerText()).replace(/[A-HJ-NPR-Z0-9]{17}/g,'[vehicle]').replace(/\S+@\S+/g,'[account]').slice(0,3000),
+      controls:await grouped.locator('button,a,select').evaluateAll(nodes=>nodes.map(n=>({tag:n.tagName,
+        text:(n.innerText||'').trim().slice(0,120),role:n.getAttribute('role')})).slice(0,25))}));
     console.info(JSON.stringify({component:'supplier-extra-snapshot-criteria',category,cards:cards.slice(0,30).map(row=>({
       vin:/\bVIN\b/.test(row.text),product:components.some(c=>new RegExp(c.product,'i').test(row.text)),
       articleNumber:!!row.partNumber,quantity:Number(row.text.match(/benötigte Stückzahl:\s*(\d+)/)?.[1])||null,
