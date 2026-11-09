@@ -987,13 +987,14 @@ export async function readQuote(input, credentials) {
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {
-    if(stage==='vehicle-route-confirmation'){
+    if(stage.startsWith('vehicle-')||stage==='quickview-haynes-identification'){
       const pathname=new URL(page.url()).pathname;
       const known=new Set(['dch-ax','vehicle','home','search','articles','article-list','parts']);
       const pathShape=pathname.split('/').map(part=>known.has(part)||/^[a-z-]{1,24}$/.test(part)?part:part.replace(/[0-9]/g,'#').replace(/[^VM#]/gi,'x')).join('/').slice(0,200);
       console.warn(JSON.stringify({component:'supplier-vehicle-route',pathShape,
         headings:await page.locator('h1,h2,h3,h4,[role="dialog"] [role="heading"]').evaluateAll(nodes=>nodes
-          .map(n=>(n.innerText||'').trim()).filter(t=>t.length<100&&/Fahrzeug|VIN|Suchergebnis|Auswahl/i.test(t)&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)).slice(0,12))}));
+          .map(n=>(n.innerText||'').trim()).filter(t=>t.length<100&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)).slice(0,12)),
+        navigation:await page.locator('a,button').evaluateAll(nodes=>[...new Set(nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>(n.innerText||'').trim()).filter(t=>t.length<90&&/Haynes|TecDoc|Quick Click|Fahrzeug ändern|Artikel anzeigen|Weiter|Bestätigen/i.test(t)&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)))].slice(0,20))}));
     }
     if (stage.startsWith('oil-')) {
       const dialogs = [];
