@@ -2,17 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { categoryCheckboxState, uniqueCheckboxChange, normalizeCatalogText, oilPackageConfirmed, requestedProductsPresent, waitForArticle } from '../browser-provider.mjs';
 
-test('an earlier results card cannot satisfy the requested oil article wait', async () => {
-  let selector;
-  const page = {locator: () => ({filter: options => {
-    selector = options.hasText;
-    return {first: () => ({waitFor: async () => {
-      assert.equal(selector.test('Artikel Nr.: OLD-FILTER\nÖlfilter'),false);
-      assert.equal(selector.test('Artikel Nr.: 15F6E60\nMotoröl'),false);
-      assert.equal(selector.test('Artikel Nr.: 15F6E6\nMotoröl'),true);
-    }})};
-  }})};
-  await waitForArticle(page,'15F6E6');
+test('oil lookup waits for the exact article in its complete visible card', async () => {
+  const previous=globalThis.document;
+  const card=(number,visible=true)=>{
+    const root={innerText:'Artikel Nr.: '+number+'\nMotoröl',querySelectorAll:()=>[node]};
+    const node={innerText:'Details',parentElement:root,getBoundingClientRect:()=>({height:visible?20:0})};
+    return node;
+  };
+  try {
+    const page={waitForFunction:async(predicate,number)=>{
+      for(const nodes of [[card('OLD-FILTER')],[card('15F6E60')],[card(number,false)]]){
+        globalThis.document={querySelectorAll:()=>nodes};
+        assert.equal(predicate(number),false);
+      }
+      globalThis.document={querySelectorAll:()=>[card(number)]};
+      assert.equal(predicate(number),true);
+    }};
+    await waitForArticle(page,'15F6E6');
+  } finally {if(previous===undefined)delete globalThis.document;else globalThis.document=previous;}
 });
 
 test('combined brake work waits for both discs and pads instead of the first matching product',()=>{
