@@ -768,6 +768,8 @@ export async function readQuote(input, credentials) {
         await target.click();
         await haynes.getByText(new RegExp(vehicleServices[name].operations[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))).first().waitFor({timeout:5000}).catch(()=>{});
         expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
+        if(/wischer/i.test(name))console.info(JSON.stringify({component:'supplier-wiper-operations',
+          names:expandedLabourText.split('\n').map(x=>x.trim()).filter(x=>x.length<150&&/Wisch|Windschutz|Heckscheibe|Karosserie/.test(x)&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,30)}));
       }
       if(!evidence)throw manual('Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.');
       extraLabour.push({service:name,...evidence});
