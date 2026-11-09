@@ -34,3 +34,9 @@ test('unlabelled multiline engine lubricant rows retain their exact grade and ma
  assert.equal(engineOilSpecification('Automatikgetriebeöl\nSAE 0W-30\nMB 229.5'),null);
  assert.equal(engineOilSpecification('Motoröl\nSAE 0W-30\nACEA C3'),null);
 });
+
+test('blank table rows, indentation and nonbreaking spaces do not hide an explicit engine approval',()=>{
+ const text='Motor\n\n  Motoröl\u00a0\n\n\tSAE 0W-30\n\n  MB 229.5\n\nAlle Temperaturen';
+ assert.deepEqual(engineOilSpecification(text),{viscosity:'0W30',approval:'MB 229.5',query:'229.5'});
+ assert.equal(engineOilSpecification('Motoröl\n\nSAE 0W-30\n\nACEA C3'),null);
+});
