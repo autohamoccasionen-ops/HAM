@@ -1172,6 +1172,18 @@ export async function readQuote(input, credentials) {
       materials: [{ kind: 'oil', partNumber: '15F6E6', description: 'Castrol EDGE 0W-20 C5, MB 229.71',
         quantity: litres, unitNetCents: retailPriceCents(oilText), priceBasis: 'retail-ex-vat' }, ...parts] };
   } catch (error) {
+    if(stage==='graphical-materials'){
+      const body=await page.locator('body').innerText().catch(()=>'');
+      console.warn(JSON.stringify({component:'supplier-graph-state',
+        sessionExpired:/Sitzung[^\n]{0,50}abgelaufen/i.test(body),
+        loginFormVisible:await page.locator('input[type="password"]').isVisible().catch(()=>false),
+        filterDialogVisible:await page.getByRole('dialog',{name:'Filter',exact:true}).isVisible().catch(()=>false),
+        dialogs:await page.getByRole('dialog').evaluateAll(nodes=>nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>({
+          label:n.getAttribute('aria-label'),
+          heading:Array.from(n.querySelectorAll('h1,h2,h3,h4,[role="heading"]')).map(x=>(x.innerText||'').trim()).filter(t=>t.length<100&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t)),
+          buttons:Array.from(n.querySelectorAll('button')).map(x=>(x.innerText||'').trim()).filter(t=>t.length<60&&!/[A-HJ-NPR-Z0-9]{17}|@/.test(t))}))),
+        visibleControls:await page.locator('button,a,[role="heading"]').evaluateAll(nodes=>[...new Set(nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>(n.innerText||'').trim()).filter(t=>/^(Einloggen|Abbrechen|Bestätigen|Schließen|Schliessen|Close|Filter|OK)$/i.test(t)))])}));
+    }
     if(stage.startsWith('vehicle-')||stage==='quickview-haynes-identification'){
       const pathname=new URL(page.url()).pathname;
       const known=new Set(['dch-ax','vehicle','home','search','articles','article-list','parts']);
