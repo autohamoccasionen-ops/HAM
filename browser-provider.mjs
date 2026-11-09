@@ -203,7 +203,9 @@ export async function lookupVin(page, vin) {
 async function openHaynesByVin(context, vin) {
   const entry=await context.newPage();
   await entry.goto(DSTORE+'/dch-ax/home',{waitUntil:'domcontentloaded'});
-  await rejectVisibleCookieConsent(entry);
+  // The signed-in context already has its consent choice. Only act on a
+  // visible CMP here; an unrelated SDK initializer must not block navigation.
+  await clickVisibleCookieConsent(entry);
   const popup=context.waitForEvent('page');
   await clickWithCookieConsent(entry,entry.getByRole('link',{name:/Haynes Pro/}));
   const haynes=await popup; haynes.setDefaultTimeout(20000);
@@ -738,6 +740,7 @@ async function openGraphDrawing(page,title,vin) {
   if(await reset.isVisible()) {
     await clickWithCookieConsent(page,reset);
     await reset.waitFor({state:'hidden'});
+    await page.waitForTimeout(1000);
   }
   if(!(await visibleText(page)).includes(vin))throw manual('Die Fahrgestellnummer wurde nicht bestätigt.');
 }
