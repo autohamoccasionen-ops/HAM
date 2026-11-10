@@ -1123,7 +1123,13 @@ export async function readQuote(input, credentials) {
             names:expandedLabourText.split('\n').map(x=>x.trim()).filter(x=>x.length<150&&/Wisch|Elektr|Waschanlage/.test(x)&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,40)}));
         }
       }
-      if(!evidence)throw manual('Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.');
+      if(!evidence){
+        const lines=expandedLabourText.split('\n').map(x=>x.trim());
+        console.info(JSON.stringify({component:'supplier-missing-extra-labour',service:name,
+          operations:lines.flatMap((line,i)=>/Filter|filter|Luft|luft/.test(line)?[lines.slice(i,i+5).join(' | ')]:[]).filter(t=>t.length<350&&!/[A-HJ-NPR-Z0-9]{17}|@|https?:/.test(t)).slice(0,30),
+          menu:await haynes.locator('a,button,h2,h3,h4,[role="treeitem"]').evaluateAll(nodes=>[...new Set(nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>(n.innerText||'').trim()).filter(t=>t&&t.length<100&&!/[0-9@]|https?:|OE:/i.test(t)))].slice(0,100))}));
+        throw manual('Arbeitszeit für eine gewählte Zusatzleistung konnte nicht eindeutig bestätigt werden.');
+      }
       extraLabour.push({service:name,...evidence});
     }
     console.info(JSON.stringify({ component: 'supplier-progress', stage: 'labour-confirmed' }));
