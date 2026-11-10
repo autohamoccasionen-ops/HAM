@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {vehicleServices,componentCandidate,operationEvidence,catalogBrand,uniqueOeVariant} from '../vehicle-services.mjs';
+import {vehicleServices,componentCandidate,operationEvidence,serviceOperationEvidence,catalogBrand,uniqueOeVariant} from '../vehicle-services.mjs';
 import {retailPriceCents} from '../quote.mjs';
+test('air filter removal and installation supplies replacement labour without charging cleaning or housing repair',()=>{
+ const service=vehicleServices['Luftfilter-Wechsel'];
+ const text='Luftfiltereinsatz reinigen*\n+\n0,50\nLuftfiltergehäuse reinigen*\n+\n0,10\nLuftfiltereinsatz aus-/einbauen OE: 09-1054\n+\n0,40\nLuftfiltergehäuse instandsetzen*\n+\n0,16';
+ assert.deepEqual(serviceOperationEvidence(text,service),{operation:'09-1054',hours:0.4});
+ assert.equal(serviceOperationEvidence(text.replace('Luftfiltereinsatz aus-/einbauen OE: 09-1054\n+\n0,40',''),service),null);
+ assert.deepEqual(serviceOperationEvidence(text+'\nLuftfilter erneuern OE: DIRECT-FILTER\n+\n0,30',service),{operation:'DIRECT-FILTER',hours:0.3});
+});
 test('spaced OE codes keep the complete operation identifier and its own hours',()=>{
  const names=['Luftfilter erneuern'];
  assert.deepEqual(operationEvidence('Luftfilter erneuern OE: 24 24 19 00\n+\n0,20',names),{operation:'24 24 19 00',hours:0.2});
