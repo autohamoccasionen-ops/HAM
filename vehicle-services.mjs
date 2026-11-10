@@ -14,7 +14,7 @@ export const vehicleServices=Object.freeze({
   'Bremsbeläge Vorderachse erneuern':brake('front',false),
   'Bremsscheiben inkl. Bremsbeläge Hinterachse erneuern':brake('rear',true),
   'Bremsbeläge Hinterachse erneuern':brake('rear',false),
-  'Luftfilter-Wechsel':{category:'Luftfilter',components:[{kind:'air-filter',name:'Luftfilter',product:'\\bLuftfilter\\b'}],operations:['Luftfilter erneuern','Luftfilter wechseln','Luftfiltereinsatz erneuern']},
+  'Luftfilter-Wechsel':{category:'Luftfilter',components:[{kind:'air-filter',name:'Luftfilter',product:'\\bLuftfilter\\b'}],operations:['Luftfilter erneuern','Luftfilter wechseln','Luftfiltereinsatz erneuern'],groups:['Luftansaugung','Luftfilter']},
   'Pollenfilter-Wechsel':{category:'Innenraumfilter',components:[{kind:'cabin-filter',name:'Pollenfilter',product:'Innenraumluft|Innenraumfilter|Pollenfilter'}],operations:['Innenraumfilter erneuern','Innenraumluftfilter erneuern','Pollenfilter erneuern','Filter für Innenraumluft erneuern']},
   'Kraftstofffilter wechseln':{category:'Kraftstofffilter',components:[{kind:'fuel-filter',name:'Kraftstofffilter',product:'Kraftstofffilter'}],operations:['Kraftstofffilter erneuern','Kraftstofffilter wechseln']},
   'Starterbatterie ersetzen':{category:'Batterie',components:[{kind:'starter-battery',name:'Starterbatterie',product:'Starterbatterie',brands:['VARTA','EXIDE','BOSCH'],requiredQuantity:1}],operations:['Batterie erneuern']},
