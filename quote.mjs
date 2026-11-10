@@ -1,4 +1,5 @@
 import { vehicleServices,serviceComponents } from './vehicle-services.mjs';
+export const oilServiceLabour = Object.freeze({hours:0.6,operation:'HAM-OIL-SERVICE-0.6H'});
 export class QuoteError extends Error {
   constructor(code, message, status = 422) {
     super(message);
@@ -129,15 +130,13 @@ export function calculateQuote(request, source, now = new Date()) {
   }
   if(extraLabour.length!==vehicleExtraNames.length||new Set(extraLabour.map(x=>x.service)).size!==vehicleExtraNames.length
     || !vehicleExtraNames.every(name=>extraLabour.some(x=>x.service===name&&x.operation&&Number.isFinite(x.hours)&&x.hours>0&&x.hours<=12))
-    || new Set([source.labourOperation,...extraLabour.map(x=>x.operation)]).size!==1+extraLabour.length)
+    || new Set([oilServiceLabour.operation,...extraLabour.map(x=>x.operation)]).size!==1+extraLabour.length)
     throw new QuoteError('LABOUR_UNCONFIRMED','Arbeitspositionen müssen eindeutig und ohne Überschneidung bestätigt werden.');
-  if(!Number.isFinite(source.labourHours)||source.labourHours<=0||source.labourHours>3)
-    throw new QuoteError('LABOUR_UNCONFIRMED','Arbeitszeit für den Motoröl-Service nicht bestätigt.');
-  const hours = source.labourHours+extraLabour.reduce((sum,x)=>sum+x.hours,0);
-  if (!Number.isFinite(hours) || hours <= 0 || hours > 30 || !source.labourOperation) {
+  const hours = oilServiceLabour.hours+extraLabour.reduce((sum,x)=>sum+x.hours,0);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 30 || !oilServiceLabour.operation) {
     throw new QuoteError('LABOUR_UNCONFIRMED', 'Arbeitszeit nicht bestätigt.');
   }
-  const labour = { description: extraLabour.length?'Motoröl-Service und ausgewählte Zusatzleistungen':'Motoröl und Filter wechseln', operation: source.labourOperation,
+  const labour = { description: extraLabour.length?'Motoröl-Service und ausgewählte Zusatzleistungen':'Motoröl und Filter wechseln', operation: oilServiceLabour.operation,
     hours, hourlyRateNetCents: 15000, netCents: Math.round(hours * 15000) };
   const addOns = selectedExtraPackages(request.extras);
   const baseSubtotalNetCents = materialLines.reduce((sum, row) => sum + row.netCents, labour.netCents);
