@@ -1,4 +1,4 @@
-import { QuoteError, parseOilCapacity, parseOilHours, retailPriceCents } from './quote.mjs';
+import { QuoteError, parseOilCapacity, oilServiceLabour, retailPriceCents } from './quote.mjs';
 import { vehicleServices,serviceComponents,componentCandidate,operationEvidence,catalogBrand,brakeBrands,uniqueOeVariant } from './vehicle-services.mjs';
 import {engineOilSpecification,approvedOilProduct,oilBrands} from './oil-specs.mjs';
 
@@ -1066,27 +1066,14 @@ export async function readQuote(input, credentials) {
     else await haynes.getByText(`TecDoc-Nummer: ${vehicleId}`, { exact: true }).waitFor();
     const haynesOverviewUrl=haynes.url();
     await closeHaynesLaunchDialog(page);
-    stage = 'labour-lookup';
-    await haynes.getByRole('link', { name: /Arbeitswerte/ }).click();
-    await haynes.getByRole('heading', { name: 'Arbeitswerte', exact: true }).waitFor();
-    let labourText = await visibleText(haynes);
-    if(!operationEvidence(labourText,['Motoröl und Filter wechseln'])){
-      console.info(JSON.stringify({component:'supplier-oil-labour-menu',labels:await haynes.locator('a,button,h2,h3,h4').evaluateAll(nodes=>[...new Set(nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height}).map(n=>(n.innerText||'').trim()).filter(t=>t&&t.length<100&&!/[A-HJ-NPR-Z0-9]{17}|@|https?:/i.test(t)))].slice(0,100))}));
-      for(const group of ['Motor','Schmiersystem','Motorschmierung']){
-        if(operationEvidence(labourText,['Motoröl und Filter wechseln']))break;
-        const link=haynes.getByRole('link',{name:group,exact:true}).filter({visible:true});
-        if(await link.count()!==1)continue;
-        await link.click();
-        await haynes.getByText(/Motoröl und Filter wechseln/).first().waitFor({timeout:4000}).catch(()=>{});
-        labourText=await visibleText(haynes);
-      }
+    const {hours:labourHours,operation}=oilServiceLabour;
+    let labourText='';
+    if(vehicleExtraNames.some(name=>!vehicleServices[name].garageLabour)){
+      stage = 'labour-lookup';
+      await haynes.getByRole('link', { name: /Arbeitswerte/ }).click();
+      await haynes.getByRole('heading', { name: 'Arbeitswerte', exact: true }).waitFor();
+      labourText = await visibleText(haynes);
     }
-    console.info(JSON.stringify({component:'supplier-service-operations', names:labourText.split('\n')
-      .map(x=>x.trim()).filter(x=>x.length<160&&/Filter|[Öö]l|Motor|Wartung|Inspektion|Brems|Zündker|Riemen|Batterie|Getriebe|Wisch|Karosserie/.test(x)
-        &&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,60)}));
-    const labourHours = parseOilHours(labourText);
-    const operation = operationEvidence(labourText,['Motoröl und Filter wechseln'])?.operation;
-    if (!operation) throw manual('Arbeitsposition konnte nicht eindeutig gelesen werden.');
     const extraLabour=[];
     let expandedLabourText=labourText;
     for(const name of vehicleExtraNames){
