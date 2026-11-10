@@ -1,5 +1,5 @@
 import { QuoteError, parseOilCapacity, oilServiceLabour, retailPriceCents } from './quote.mjs';
-import { vehicleServices,serviceComponents,componentCandidate,operationEvidence,catalogBrand,brakeBrands,uniqueOeVariant } from './vehicle-services.mjs';
+import { vehicleServices,serviceComponents,componentCandidate,serviceOperationEvidence,catalogBrand,brakeBrands,uniqueOeVariant } from './vehicle-services.mjs';
 import {engineOilSpecification,approvedOilProduct,oilBrands} from './oil-specs.mjs';
 
 // Read-only browser integration. No account changes, cart additions, orders,
@@ -1079,10 +1079,10 @@ export async function readQuote(input, credentials) {
     for(const name of vehicleExtraNames){
       const fixed = vehicleServices[name].garageLabour;
       if (fixed) { extraLabour.push({service:name,...fixed}); continue; }
-      let evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
+      let evidence=serviceOperationEvidence(expandedLabourText,vehicleServices[name]);
       if(!evidence&&/filter/i.test(vehicleServices[name].category)){
         const filter=haynes.getByText('Filter',{exact:true}).filter({visible:true});
-        if(await filter.count()===1){await filter.click();await haynes.getByText(/(?:Innenraum|Luftfilter|Kraftstofffilter).*(?:erneuern|wechseln)/).first().waitFor({timeout:5000}).catch(()=>{});expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);}
+        if(await filter.count()===1){await filter.click();await haynes.getByText(/(?:Innenraum|Luftfilter|Kraftstofffilter).*(?:erneuern|wechseln)/).first().waitFor({timeout:5000}).catch(()=>{});expandedLabourText=await visibleText(haynes);evidence=serviceOperationEvidence(expandedLabourText,vehicleServices[name]);}
       }
       for(const group of vehicleServices[name].groups||[]){
         if(evidence)break;
@@ -1091,7 +1091,7 @@ export async function readQuote(input, credentials) {
         if(await target.count()!==1)continue;
         await target.click();
         await haynes.getByText(new RegExp(vehicleServices[name].operations[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))).first().waitFor({timeout:5000}).catch(()=>{});
-        expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
+        expandedLabourText=await visibleText(haynes);evidence=serviceOperationEvidence(expandedLabourText,vehicleServices[name]);
         if(/wischer/i.test(name))console.info(JSON.stringify({component:'supplier-wiper-operations',
           names:expandedLabourText.split('\n').map(x=>x.trim()).filter(x=>x.length<150&&/Wisch|Windschutz|Heckscheibe|Karosserie/.test(x)&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,30)}));
       }
@@ -1118,7 +1118,7 @@ export async function readQuote(input, credentials) {
           }
           await next.click();
           await haynes.getByText(new RegExp(vehicleServices[name].operations[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))).first().waitFor({timeout:5000}).catch(()=>{});
-          expandedLabourText=await visibleText(haynes);evidence=operationEvidence(expandedLabourText,vehicleServices[name].operations);
+          expandedLabourText=await visibleText(haynes);evidence=serviceOperationEvidence(expandedLabourText,vehicleServices[name]);
           console.info(JSON.stringify({component:'supplier-wiper-navigation',groups:[...visited],
             names:expandedLabourText.split('\n').map(x=>x.trim()).filter(x=>x.length<150&&/Wisch|Elektr|Waschanlage/.test(x)&&!/[A-HJ-NPR-Z0-9]{17}/.test(x)).slice(0,40)}));
         }
