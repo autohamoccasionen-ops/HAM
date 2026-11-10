@@ -27,14 +27,25 @@ const verified = {
   ]
 };
 
+test('every vehicle uses fixed 0.6 hours even without a supplier oil labour position',()=>{
+ for(const vin of ['W0000000000000000','X0000000000000000']){
+  for(const hours of [undefined,0,0.2,2.5]){
+   const result=calculateQuote({...request,vin},{...verified,vin,labourHours:hours,labourOperation:undefined});
+   assert.equal(result.labour.hours,0.6);
+   assert.equal(result.labour.netCents,9000);
+   assert.equal(result.labour.operation,'HAM-OIL-SERVICE-0.6H');
+  }
+ }
+});
+
 test('verified oil service: list prices, CHF 150/h, 8.1% VAT and upward CHF 0.05 rounding', () => {
   const quote = calculateQuote(validateRequest(request), verified, new Date('2026-11-07T10:00:00Z'));
   assert.equal(quote.materials[0].netCents, 35910);
-  assert.equal(quote.labour.netCents, 12000);
-  assert.equal(quote.subtotalNetCents, 52230);
-  assert.equal(quote.vatCents, 4231);
-  assert.equal(quote.roundingCents, 4);
-  assert.equal(quote.totalCents, 56465);
+  assert.equal(quote.labour.netCents, 9000);
+  assert.equal(quote.subtotalNetCents, 49230);
+  assert.equal(quote.vatCents, 3988);
+  assert.equal(quote.roundingCents, 2);
+  assert.equal(quote.totalCents, 53220);
   assert.deepEqual(quote.materials.map(row=>row.kind),['oil','filter']);
   assert.throws(()=>calculateQuote(request,{...verified,materials:[...verified.materials,
     {kind:'drain-plug',partNumber:'OLD-PLUG',description:'Excluded plug',quantity:1,unitNetCents:1346,priceBasis:'retail-ex-vat'}]}),
@@ -85,10 +96,10 @@ test('validate customer inputs and require separate review of unsupported servic
 test('selected packages are itemized once and VAT is calculated on the complete quotation',()=>{
  const input=validateRequest({...request,extras:['Kraftstoffadditiv Diesel','Bremsflüssigkeit wechseln']});
  const result=calculateQuote(input,verified);
- assert.equal(result.baseSubtotalNetCents,52230);
- assert.equal(result.subtotalNetCents,66030);
- assert.equal(result.totalCents,71380);
- assert.equal(result.labour.netCents,12000);
+ assert.equal(result.baseSubtotalNetCents,49230);
+ assert.equal(result.subtotalNetCents,63030);
+ assert.equal(result.totalCents,68135);
+ assert.equal(result.labour.netCents,9000);
  assert.deepEqual(result.addOns.map(x=>x.netCents),[11000,2800]);
 });
 
@@ -108,9 +119,9 @@ test('vehicle-specific brake materials and labour are required and charged once'
   {kind:'front-pads',partNumber:'TEST-PADS',description:'Test pad set',quantity:1,unitNetCents:8000,priceBasis:'retail-ex-vat'}],
   extraLabour:[{service,operation:'test-disc-operation',hours:1}]};
  const quote=calculateQuote(input,source);
- assert.equal(quote.materials.length,4);assert.equal(quote.labour.hours,1.8);
- assert.equal(quote.subtotalNetCents,95230);
- assert.equal(quote.baseOilSubtotalNetCents,52230);assert.equal(quote.serviceLines[0].netCents,43000);
+ assert.equal(quote.materials.length,4);assert.equal(quote.labour.hours,1.6);
+ assert.equal(quote.subtotalNetCents,92230);
+ assert.equal(quote.baseOilSubtotalNetCents,49230);assert.equal(quote.serviceLines[0].netCents,43000);
  assert.throws(()=>calculateQuote(input,{...source,extraLabour:[]}),{code:'LABOUR_UNCONFIRMED'});
  assert.throws(()=>validateRequest({...input,extras:[service,'Bremsbeläge Vorderachse erneuern']}),{code:'INVALID_REQUEST'});
 });
