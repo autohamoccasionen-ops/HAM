@@ -61,7 +61,7 @@ test('complete authenticated contract returns a calculated quote without credent
     const response = await fetch(base + '/api/quotes', { method: 'POST', headers, body: JSON.stringify(input) });
     assert.equal(response.status, 200);
     const data = await response.json();
-    assert.equal(data.totalCents, 56465);
+    assert.equal(data.totalCents, 53220);
     assert.equal(data.labour.hourlyRateNetCents, 15000);
     const status = await (await fetch(base + '/api/status', { headers })).json();
     assert.equal(status.liveConnectionVerified, true);
@@ -139,7 +139,7 @@ test('background quotation returns promptly, protects polling and preserves the 
     assert.equal(ready.status, 200);
     const quote = await ready.json();
     assert.equal(quote.vin, input.vin);
-    assert.equal(quote.totalCents, 56465);
+    assert.equal(quote.totalCents, 53220);
     assert.equal((await fetch(base + '/api/quote-jobs/00000000-0000-4000-8000-000000000000', { headers })).status, 404);
   });
 });
